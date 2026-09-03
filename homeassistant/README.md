@@ -15,7 +15,7 @@ Per fixture, from [`a8_lights.yaml`](a8_lights.yaml):
 | `light.a8_light3_white` … `light.a8_light3_warm_white` (8) | One dimmable light per LED channel. Brightness slider sends `?<ch>=<0–1023>` |
 | `input_number.a8_light3_<ch>` (8) | The remembered level (0–100 %) behind each light — survives restarts |
 | `sensor.a8_light3_temperature` | Heatsink temperature, °C, polled every 60 s |
-| `sensor.a8_light3_serial`, `_model`, `_mode`, `_clock` | Identity and state from `read=config` |
+| `sensor.a8_light3_serial`, `_model`, `_mode`, `_switch`, `_clock` | Identity and state from `read=config` |
 | `rest_command.a8_set_channel` | Service: set one channel (`ip`, `channel`, `pct`) |
 | `rest_command.a8_set_all` | Service: set all 8 channels in one call (`ip`, `w`, `b`, `r`, `g`, `b2`, `p`, `uv`, `wm` as 0–100) |
 | `rest_command.a8_set_clock` | Service: sync the light's clock to HA's time |
@@ -92,6 +92,10 @@ automation:
 
 **Offline light.** The `rest` sensors go `unavailable` after a failed poll — a cheap "light is offline"
 signal for an alert automation. Commands to an offline light fail silently in the log.
+
+**Six-channel fixtures.** The sensor field indices in the package are for an 8-channel light. On a
+6-channel model subtract 4 from each (temperature 17, clock 18, serial 21, model 24) and change the
+`availability` guard from `> 28` to `> 20`. The channel list also drops to the first six.
 
 **Safety.** The package never sends `save=`, `reset=`, `version=` (OTA) or `node=restart`. Those exist
 in the protocol but can brick or wipe a fixture; they are deliberately left out.

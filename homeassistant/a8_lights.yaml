@@ -1,7 +1,8 @@
 # A8 Pro II reef lights — local HTTP control (Route A)
-# Package file. Save as /config/packages/a8_lights.yaml (see ../README.md §8) and make sure configuration.yaml has:
+# Package file. Save as /config/packages/a8_lights.yaml and make sure configuration.yaml has:
 #   homeassistant:
 #     packages: !include_dir_named packages
+# Install guide, caveats, photoperiod example: homeassistant/README.md
 # Protocol: https://github.com/kenbrinkman/A8-Pro-II-Control
 #
 # To add another fixture: copy every block that mentions "light3" / 192.168.1.208
@@ -92,31 +93,39 @@ input_number:
     mode: slider
 
 rest:
+  # Field indices are for an 8-CHANNEL fixture (d = 2*(8-6) = 4).
+  # For a 6-channel light subtract 4 from each: temp 17, clock 18, serial 21, model 24.
+  # `availability` guards against the light replying "A+" instead of a config string.
   - resource: "http://192.168.1.208/?read=config"
     scan_interval: 60
     timeout: 5
     sensor:
-      - name: "A8 Light 3 Config"
-        unique_id: a8_light3_config
+      - name: "A8 Light 3 Switch"
+        unique_id: a8_light3_switch
+        availability: "{{ value.split('|') | count > 28 }}"
         value_template: "{{ value.split('|')[0] }}"
       - name: "A8 Light 3 Temperature"
         unique_id: a8_light3_temperature
         unit_of_measurement: "°C"
         device_class: temperature
         state_class: measurement
-        # 8-channel reply: temperature is field 21 (17 + 2*(8-6))
-        value_template: "{{ value.split('|')[21] | float(none) }}"
+        availability: "{{ value.split('|') | count > 28 }}"
+        value_template: "{{ value.split('|')[21] | float(0) }}"
       - name: "A8 Light 3 Serial"
         unique_id: a8_light3_serial
+        availability: "{{ value.split('|') | count > 28 }}"
         value_template: "{{ value.split('|')[25] }}"
       - name: "A8 Light 3 Model"
         unique_id: a8_light3_model
+        availability: "{{ value.split('|') | count > 28 }}"
         value_template: "{{ value.split('|')[28] }}"
       - name: "A8 Light 3 Mode"
         unique_id: a8_light3_mode
+        availability: "{{ value.split('|') | count > 28 }}"
         value_template: "{{ 'schedule' if value.split('|')[1] == '1' else 'manual' }}"
       - name: "A8 Light 3 Clock"
         unique_id: a8_light3_clock
+        availability: "{{ value.split('|') | count > 28 }}"
         value_template: >-
           {{ '%02d:%02d' | format(value.split('|')[22].split(',')[0] | int, value.split('|')[22].split(',')[1] | int) }}
 
