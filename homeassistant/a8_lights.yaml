@@ -5,6 +5,9 @@
 # Install guide, caveats, photoperiod example: homeassistant/README.md
 # Protocol: https://github.com/kenbrinkman/A8-Pro-II-Control
 #
+# Uses the modern `template:` light schema (HA 2024.10+). The legacy
+# `light: - platform: template` format was removed and will NOT load.
+#
 # To add another fixture: copy every block that mentions "light3" / 192.168.1.208
 # and change the number and IP.
 
@@ -129,25 +132,12 @@ rest:
         value_template: >-
           {{ '%02d:%02d' | format(value.split('|')[22].split(',')[0] | int, value.split('|')[22].split(',')[1] | int) }}
 
-light:
-  - platform: template
-    lights:
-      a8_light3_w:
-        friendly_name: "A8 Light 3 White"
+template:
+  - light:
+      - name: "A8 Light 3 White"
         unique_id: a8_light3_w_light
-        value_template: "{{ states('input_number.a8_light3_w') | float(0) > 0 }}"
-        level_template: "{{ (states('input_number.a8_light3_w') | float(0) * 2.55) | round(0) | int }}"
-        set_level:
-          - action: input_number.set_value
-            target:
-              entity_id: input_number.a8_light3_w
-            data:
-              value: "{{ (brightness / 2.55) | round(0) | int }}"
-          - action: rest_command.a8_set_channel
-            data:
-              ip: "192.168.1.208"
-              channel: "w"
-              pct: "{{ (brightness / 2.55) | round(0) | int }}"
+        state: "{{ states('input_number.a8_light3_w') | float(0) > 0 }}"
+        level: "{{ (states('input_number.a8_light3_w') | float(0) * 2.55) | round(0) | int }}"
         turn_on:
           - action: input_number.set_value
             target:
@@ -170,22 +160,21 @@ light:
               ip: "192.168.1.208"
               channel: "w"
               pct: 0
-      a8_light3_b:
-        friendly_name: "A8 Light 3 Blue"
-        unique_id: a8_light3_b_light
-        value_template: "{{ states('input_number.a8_light3_b') | float(0) > 0 }}"
-        level_template: "{{ (states('input_number.a8_light3_b') | float(0) * 2.55) | round(0) | int }}"
         set_level:
           - action: input_number.set_value
             target:
-              entity_id: input_number.a8_light3_b
+              entity_id: input_number.a8_light3_w
             data:
               value: "{{ (brightness / 2.55) | round(0) | int }}"
           - action: rest_command.a8_set_channel
             data:
               ip: "192.168.1.208"
-              channel: "b"
+              channel: "w"
               pct: "{{ (brightness / 2.55) | round(0) | int }}"
+      - name: "A8 Light 3 Blue"
+        unique_id: a8_light3_b_light
+        state: "{{ states('input_number.a8_light3_b') | float(0) > 0 }}"
+        level: "{{ (states('input_number.a8_light3_b') | float(0) * 2.55) | round(0) | int }}"
         turn_on:
           - action: input_number.set_value
             target:
@@ -208,22 +197,21 @@ light:
               ip: "192.168.1.208"
               channel: "b"
               pct: 0
-      a8_light3_r:
-        friendly_name: "A8 Light 3 Red"
-        unique_id: a8_light3_r_light
-        value_template: "{{ states('input_number.a8_light3_r') | float(0) > 0 }}"
-        level_template: "{{ (states('input_number.a8_light3_r') | float(0) * 2.55) | round(0) | int }}"
         set_level:
           - action: input_number.set_value
             target:
-              entity_id: input_number.a8_light3_r
+              entity_id: input_number.a8_light3_b
             data:
               value: "{{ (brightness / 2.55) | round(0) | int }}"
           - action: rest_command.a8_set_channel
             data:
               ip: "192.168.1.208"
-              channel: "r"
+              channel: "b"
               pct: "{{ (brightness / 2.55) | round(0) | int }}"
+      - name: "A8 Light 3 Red"
+        unique_id: a8_light3_r_light
+        state: "{{ states('input_number.a8_light3_r') | float(0) > 0 }}"
+        level: "{{ (states('input_number.a8_light3_r') | float(0) * 2.55) | round(0) | int }}"
         turn_on:
           - action: input_number.set_value
             target:
@@ -246,22 +234,21 @@ light:
               ip: "192.168.1.208"
               channel: "r"
               pct: 0
-      a8_light3_g:
-        friendly_name: "A8 Light 3 Green"
-        unique_id: a8_light3_g_light
-        value_template: "{{ states('input_number.a8_light3_g') | float(0) > 0 }}"
-        level_template: "{{ (states('input_number.a8_light3_g') | float(0) * 2.55) | round(0) | int }}"
         set_level:
           - action: input_number.set_value
             target:
-              entity_id: input_number.a8_light3_g
+              entity_id: input_number.a8_light3_r
             data:
               value: "{{ (brightness / 2.55) | round(0) | int }}"
           - action: rest_command.a8_set_channel
             data:
               ip: "192.168.1.208"
-              channel: "g"
+              channel: "r"
               pct: "{{ (brightness / 2.55) | round(0) | int }}"
+      - name: "A8 Light 3 Green"
+        unique_id: a8_light3_g_light
+        state: "{{ states('input_number.a8_light3_g') | float(0) > 0 }}"
+        level: "{{ (states('input_number.a8_light3_g') | float(0) * 2.55) | round(0) | int }}"
         turn_on:
           - action: input_number.set_value
             target:
@@ -284,22 +271,21 @@ light:
               ip: "192.168.1.208"
               channel: "g"
               pct: 0
-      a8_light3_b2:
-        friendly_name: "A8 Light 3 Deep Blue"
-        unique_id: a8_light3_b2_light
-        value_template: "{{ states('input_number.a8_light3_b2') | float(0) > 0 }}"
-        level_template: "{{ (states('input_number.a8_light3_b2') | float(0) * 2.55) | round(0) | int }}"
         set_level:
           - action: input_number.set_value
             target:
-              entity_id: input_number.a8_light3_b2
+              entity_id: input_number.a8_light3_g
             data:
               value: "{{ (brightness / 2.55) | round(0) | int }}"
           - action: rest_command.a8_set_channel
             data:
               ip: "192.168.1.208"
-              channel: "b2"
+              channel: "g"
               pct: "{{ (brightness / 2.55) | round(0) | int }}"
+      - name: "A8 Light 3 Deep Blue"
+        unique_id: a8_light3_b2_light
+        state: "{{ states('input_number.a8_light3_b2') | float(0) > 0 }}"
+        level: "{{ (states('input_number.a8_light3_b2') | float(0) * 2.55) | round(0) | int }}"
         turn_on:
           - action: input_number.set_value
             target:
@@ -322,22 +308,21 @@ light:
               ip: "192.168.1.208"
               channel: "b2"
               pct: 0
-      a8_light3_p:
-        friendly_name: "A8 Light 3 Purple"
-        unique_id: a8_light3_p_light
-        value_template: "{{ states('input_number.a8_light3_p') | float(0) > 0 }}"
-        level_template: "{{ (states('input_number.a8_light3_p') | float(0) * 2.55) | round(0) | int }}"
         set_level:
           - action: input_number.set_value
             target:
-              entity_id: input_number.a8_light3_p
+              entity_id: input_number.a8_light3_b2
             data:
               value: "{{ (brightness / 2.55) | round(0) | int }}"
           - action: rest_command.a8_set_channel
             data:
               ip: "192.168.1.208"
-              channel: "p"
+              channel: "b2"
               pct: "{{ (brightness / 2.55) | round(0) | int }}"
+      - name: "A8 Light 3 Purple"
+        unique_id: a8_light3_p_light
+        state: "{{ states('input_number.a8_light3_p') | float(0) > 0 }}"
+        level: "{{ (states('input_number.a8_light3_p') | float(0) * 2.55) | round(0) | int }}"
         turn_on:
           - action: input_number.set_value
             target:
@@ -360,22 +345,21 @@ light:
               ip: "192.168.1.208"
               channel: "p"
               pct: 0
-      a8_light3_uv:
-        friendly_name: "A8 Light 3 UV"
-        unique_id: a8_light3_uv_light
-        value_template: "{{ states('input_number.a8_light3_uv') | float(0) > 0 }}"
-        level_template: "{{ (states('input_number.a8_light3_uv') | float(0) * 2.55) | round(0) | int }}"
         set_level:
           - action: input_number.set_value
             target:
-              entity_id: input_number.a8_light3_uv
+              entity_id: input_number.a8_light3_p
             data:
               value: "{{ (brightness / 2.55) | round(0) | int }}"
           - action: rest_command.a8_set_channel
             data:
               ip: "192.168.1.208"
-              channel: "uv"
+              channel: "p"
               pct: "{{ (brightness / 2.55) | round(0) | int }}"
+      - name: "A8 Light 3 UV"
+        unique_id: a8_light3_uv_light
+        state: "{{ states('input_number.a8_light3_uv') | float(0) > 0 }}"
+        level: "{{ (states('input_number.a8_light3_uv') | float(0) * 2.55) | round(0) | int }}"
         turn_on:
           - action: input_number.set_value
             target:
@@ -398,22 +382,21 @@ light:
               ip: "192.168.1.208"
               channel: "uv"
               pct: 0
-      a8_light3_wm:
-        friendly_name: "A8 Light 3 Warm White"
-        unique_id: a8_light3_wm_light
-        value_template: "{{ states('input_number.a8_light3_wm') | float(0) > 0 }}"
-        level_template: "{{ (states('input_number.a8_light3_wm') | float(0) * 2.55) | round(0) | int }}"
         set_level:
           - action: input_number.set_value
             target:
-              entity_id: input_number.a8_light3_wm
+              entity_id: input_number.a8_light3_uv
             data:
               value: "{{ (brightness / 2.55) | round(0) | int }}"
           - action: rest_command.a8_set_channel
             data:
               ip: "192.168.1.208"
-              channel: "wm"
+              channel: "uv"
               pct: "{{ (brightness / 2.55) | round(0) | int }}"
+      - name: "A8 Light 3 Warm White"
+        unique_id: a8_light3_wm_light
+        state: "{{ states('input_number.a8_light3_wm') | float(0) > 0 }}"
+        level: "{{ (states('input_number.a8_light3_wm') | float(0) * 2.55) | round(0) | int }}"
         turn_on:
           - action: input_number.set_value
             target:
@@ -436,6 +419,17 @@ light:
               ip: "192.168.1.208"
               channel: "wm"
               pct: 0
+        set_level:
+          - action: input_number.set_value
+            target:
+              entity_id: input_number.a8_light3_wm
+            data:
+              value: "{{ (brightness / 2.55) | round(0) | int }}"
+          - action: rest_command.a8_set_channel
+            data:
+              ip: "192.168.1.208"
+              channel: "wm"
+              pct: "{{ (brightness / 2.55) | round(0) | int }}"
 
 automation:
   - id: a8_light3_slider_push

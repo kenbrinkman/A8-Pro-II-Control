@@ -48,7 +48,7 @@ The file is written for one light called "3". For each additional light, copy ev
 
 - the 8 `input_number` entries
 - the `rest:` resource block (sensors)
-- the 8 template lights under `light:`
+- the 8 template lights under `template:`
 - the `automation` entry (update its `id`, `alias`, the 8 entity ids in `entity_id`, and `ip`)
 
 A small Python generator that does this is at the bottom of this page.
