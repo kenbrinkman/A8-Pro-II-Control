@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""A8 Pro II LAN probe — tests whether the lights still expose their local HTTP API.
+"""A8 Pro II LAN probe — tests whether the lights expose their local HTTP API.
 
 Stdlib only. Run on any machine on the same LAN as the lights.
 
@@ -8,10 +8,11 @@ Stdlib only. Run on any machine on the same LAN as the lights.
 
 What it does, per host:
   1. checks a short list of likely HTTP ports
-  2. issues  GET /?read=config  and decodes the reply
-  3. prints the channel map and current levels
+  2. issues  GET /?sta=getip      (cheap identity check: "<ip>,<serial>,<flag>")
+  3. issues  GET /?read=config    and decodes the reply
+  4. prints the channel map, current levels, temperature, clock, timer, serial
 
-It only ever READS. Nothing here changes a light. To test writing, see --set at the bottom.
+It only ever READS. Nothing here changes a light. To test writing, see --set / --raw.
 """
 import argparse, concurrent.futures as cf, ipaddress, json, socket, sys
 import urllib.request, urllib.error
@@ -36,54 +37,85 @@ def http_get(host, port, query, timeout=TIMEOUT):
         req = urllib.request.Request(url, headers={"User-Agent": "curl/8"})
         with urllib.request.urlopen(req, timeout=timeout) as r:
             return r.read().decode("utf-8", "replace").strip()
-    except (urllib.error.URLError, OSError, ValueError) as e:
+    except (urllib.error.URLError, OSError, ValueError):
         return None
 
 
+def parse_getip(raw):
+    """sta=getip reply is "<ip>,<serial>,<flag>" (flag is a licence check result)."""
+    if not raw or "," not in raw or raw == "false":
+        return None
+    p = [x.strip() for x in raw.split(",")]
+    return {"ip": p[0], "sn": p[1] if len(p) > 1 else None,
+            "flag": p[2] if len(p) > 2 else None}
+
+
 def parse_config(raw):
-    """Decode the |-delimited read=config reply. Returns a dict or None."""
+    """Decode the |-delimited read=config reply. Returns a dict or None.
+
+    Field layout (n = channel count, d = 2*(n-6)), as read by the app's deviceSyns():
+      [0] switch  [1] mode  [2..4] fan-on / fan-off / cutoff temps
+      [5 .. 5+n-1]       current level per channel, PERCENT 0-100
+      [5+n .. 5+2n-1]    24-point daily schedule per channel, percent
+      [17+d] temperature  [18+d] clock "H,M"  [19+d] timer-on hour  [20+d] timer-off hour
+      [21+d] serial       [22+d] knob flag    [23+d] timezone       [24+d] model
+    """
     if not raw or "|" not in raw:
         return None
     f = [x.strip() for x in raw.split("|")]
     n = 8 if len(f) > 28 else 6
+    d = 2 * (n - 6)
+
+    def fld(i):
+        return f[i] if i < len(f) else None
+
     out = {
         "raw_fields": len(f),
         "channels": n,
         "switch": f[0],
         "mode": f[1],
-        "temp_on": f[2],
-        "temp_off": f[3],
-        "temp_out": f[4],
-        "levels": {},
+        "temp_on": fld(2),
+        "temp_off": fld(3),
+        "temp_out": fld(4),
+        "levels_pct": {},
         "schedule": {},
+        "temperature": fld(17 + d),
+        "clock": fld(18 + d),
+        "timer_on": fld(19 + d),
+        "timer_off": fld(20 + d),
+        "serial": fld(21 + d),
+        "knob_flag": fld(22 + d),
+        "timezone": fld(23 + d),
+        "model": fld(24 + d),
     }
     for i in range(n):
         try:
             v = int(float(f[5 + i]))
         except (ValueError, IndexError):
             v = None
-        out["levels"][ROADS[i]] = v
+        out["levels_pct"][ROADS[i]] = v
     for i in range(n):
         idx = 5 + n + i
         if idx < len(f) and "," in f[idx]:
             out["schedule"][ROADS[i]] = f[idx]
-    model_idx = 24 + 2 * (n - 6)
-    if model_idx < len(f):
-        out["model"] = f[model_idx]
     return out
 
 
-def report(host, port, cfg, raw):
+def report(host, port, cfg, raw, ident):
     print(f"\n  \033[1mLOCAL HTTP API IS ALIVE\033[0m  →  http://{host}:{port}/")
-    print(f"  model={cfg.get('model','?')}  channels={cfg['channels']}  "
-          f"switch={cfg['switch']}  mode={cfg['mode']}  "
+    if ident:
+        print(f"  sta=getip: ip={ident['ip']} serial={ident['sn']} flag={ident['flag']}")
+    print(f"  model={cfg.get('model') or '?'}  serial={cfg.get('serial') or '?'}  "
+          f"channels={cfg['channels']}  switch={cfg['switch']}  mode={cfg['mode']} "
+          f"({'schedule' if cfg['mode'] == '1' else 'manual'})")
+    print(f"  temp={cfg.get('temperature')}°C  clock={cfg.get('clock')}  "
+          f"timer on/off={cfg.get('timer_on')}/{cfg.get('timer_off')}  tz=UTC{cfg.get('timezone')}  "
           f"fan on/off/cutoff={cfg['temp_on']}/{cfg['temp_off']}/{cfg['temp_out']}")
-    print("\n  channel   raw/1023    %      name")
+    print("\n  channel    %     name")
     for i, k in enumerate(ROADS[:cfg["channels"]]):
-        v = cfg["levels"].get(k)
-        pct = f"{v * 100 / 1023:5.1f}" if isinstance(v, int) else "   ? "
-        bar = "█" * int((v or 0) * 24 / 1023)
-        print(f"  {k:<8}  {str(v):>6}    {pct}   {NAMES[i]:<12} {bar}")
+        v = cfg["levels_pct"].get(k)
+        bar = "█" * int((v or 0) * 24 / 100)
+        print(f"  {k:<8} {str(v):>4}    {NAMES[i]:<12} {bar}")
     if cfg["schedule"]:
         k0 = next(iter(cfg["schedule"]))
         print(f"\n  schedule present: {len(cfg['schedule'])} rows x 24 pts "
@@ -92,15 +124,20 @@ def report(host, port, cfg, raw):
 
 
 def probe(host):
+    """Returns (host, port, cfg, raw, open_ports, ident, note)."""
     found = [p for p in PORTS if tcp_open(host, p)]
     if not found:
-        return host, None, None, None, []
+        return host, None, None, None, [], None, None
     for p in found:
+        ident = parse_getip(http_get(host, p, "sta=getip"))
         raw = http_get(host, p, "read=config")
         cfg = parse_config(raw) if raw else None
         if cfg:
-            return host, p, cfg, raw, found
-    return host, None, None, None, found
+            return host, p, cfg, raw, found, ident, None
+        if raw == "A+" or ident:
+            note = f"device answered (read=config -> {raw!r}) but gave no config string"
+            return host, p, None, raw, found, ident, note
+    return host, None, None, None, found, None, None
 
 
 def main():
@@ -110,6 +147,8 @@ def main():
     ap.add_argument("--json", action="store_true", help="machine-readable output")
     ap.add_argument("--set", metavar="CH=VAL",
                     help="WRITE TEST: set one channel, e.g. b2=1023 (needs exactly one host)")
+    ap.add_argument("--raw", metavar="QUERY",
+                    help="send an arbitrary query string, e.g. 'preview=12&w=50&b=50' (one host)")
     a = ap.parse_args()
 
     hosts = list(a.hosts)
@@ -118,37 +157,44 @@ def main():
     if not hosts:
         ap.error("give one or more IPs, or --scan CIDR")
 
-    if a.set:
+    if a.set or a.raw:
         if len(hosts) != 1:
-            ap.error("--set needs exactly one host")
+            ap.error("--set/--raw needs exactly one host")
+        q = a.set or a.raw
+        if q.split("=")[0] in ("version", "reset", "save"):
+            ap.error(f"refusing to send '{q}' — OTA/reset/save can brick a fixture; use curl if you mean it")
         h = hosts[0]
-        _, port, cfg, _, _ = probe(h)
+        _, port, _, _, _, _, _ = probe(h)
         if not port:
             print(f"{h}: no local API, cannot write"); return
-        print(f"sending {a.set} to {h}:{port} ...")
-        print("reply:", repr(http_get(h, port, a.set)))
+        print(f"sending {q} to {h}:{port} ...")
+        print("reply:", repr(http_get(h, port, q)))
         return
 
     results = []
     workers = min(64, max(4, len(hosts)))
     with cf.ThreadPoolExecutor(max_workers=workers) as ex:
-        for host, port, cfg, raw, open_ports in ex.map(probe, hosts):
-            if not open_ports and len(hosts) > 8:
+        for r in ex.map(probe, hosts):
+            if not r[4] and len(hosts) > 8:
                 continue
-            results.append((host, port, cfg, raw, open_ports))
+            results.append(r)
 
     if a.json:
-        print(json.dumps([{"host": h, "port": p, "open_ports": o, "config": c}
-                          for h, p, c, _, o in results], indent=2))
+        print(json.dumps([{"host": h, "port": p, "open_ports": o, "identity": i, "config": c}
+                          for h, p, c, _, o, i, _ in results], indent=2))
         return
 
     if not results:
         print("no hosts responded on any candidate HTTP port")
-    for host, port, cfg, raw, open_ports in results:
+    for host, port, cfg, raw, open_ports, ident, note in results:
         print(f"\n=== {host} ===")
         print(f"  open TCP (of {PORTS}): {open_ports or 'none'}")
         if cfg:
-            report(host, port, cfg, raw)
+            report(host, port, cfg, raw, ident)
+        elif note:
+            print(f"  {note}")
+            if ident:
+                print(f"  sta=getip: ip={ident['ip']} serial={ident['sn']} flag={ident['flag']}")
         elif open_ports:
             print("  HTTP port(s) open but ?read=config did not return a config string.")
             for p in open_ports:

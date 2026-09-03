@@ -5,3 +5,4 @@ dec/
 full/
 __pycache__/
 *.pyc
+.DS_Store
