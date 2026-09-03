@@ -1,0 +1,7 @@
+# Never commit the vendor app or its decrypted source (proprietary)
+*.apk
+*-decrypted*
+dec/
+full/
+__pycache__/
+*.pyc
