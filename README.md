@@ -6,8 +6,10 @@ the AIPAI Android app, plus a stdlib-only probe you can run against your own fix
 
 > **Goal:** drive these lights from Home Assistant, per channel, entirely on the LAN.
 >
-> **Status:** protocol recovered from the app's own source, **not yet verified against hardware**.
-> The local-HTTP path (§ Route A) needs a 10-second confirmation — run [`tools/a8_probe.py`](tools/a8_probe.py).
+> **Status: Route A confirmed on hardware (3 Sep 2026).** An A8 Pro II (firmware model string `A8PRO6`,
+> 2024 firmware) on home Wi-Fi answers `GET http://<ip>/?read=config` and drives its channels from
+> `GET http://<ip>/?b2=1023` — no app, no account, no cloud. A ready-to-use Home Assistant package is in
+> [`homeassistant/`](homeassistant/). Details in §8.
 
 Vendor: 济南海内无双科技有限公司 (Jinan Hainei Wushuang Technology, Jinan, China). App published as
 "darden inc."; backend `doseen.com` → Alibaba Cloud. Lights are marketed as Radion XR30 clones
@@ -229,6 +231,48 @@ and B both remove any need for outbound access.
 
 ---
 
+## 8. Hardware confirmation — what the light actually does
+
+Tested against one A8 Pro II, station mode, factory-reset, joined to a 2.4 GHz home network.
+Probe output, verbatim:
+
+```
+LOCAL HTTP API IS ALIVE  →  http://192.168.1.208:80/
+sta=getip: ip=192.168.1.208 serial=XXXXXXX flag=false
+model=A8PRO6  serial=XXXXXXX  channels=8  switch=on  mode=0 (manual)
+temp=43.19°C  clock=7,14  timer on/off=0/0  tz=UTC8  fan on/off/cutoff=65/50/75
+```
+
+Findings:
+
+| | |
+|---|---|
+| **HTTP server** | Listening on port 80 in station mode on 2024 firmware. Route A works. |
+| **`read=config`** | 29 fields, layout exactly as §3. Field 25 is the serial, 28 the model. |
+| **Live set** | `?b2=1023` / `?b2=100` / `?b2=512` — LEDs respond immediately; scale is **0–1023** as documented (100 ≈ 10 %). |
+| **Reply to a set** | The literal string `A+` — an acknowledgement, not an error. |
+| **Read-back** | `read=config` reports the **stored** level, not the live one — after `?b2=1023` it still says 50. Live state is tracked client-side (as the app does); treat sliders in HA as assumed-state. |
+| **Factory defaults** | Timezone **UTC+8**, so the light's own schedule runs on Beijing time until you set it. Fan thresholds 65/50/75 (the app overwrites these with 35/30/80 on every save). Manual mode, all channels 50 %. |
+| **Persistence** | Not yet tested — whether a live set survives the light's internal timer. The HA package can add a periodic resend if it doesn't. |
+
+Two other devices on the network answered on port 80 with something other than a config string (a
+router page and an unrelated device) — the probe handles that; only a `|`-delimited reply counts.
+
+### Home Assistant
+
+[`homeassistant/a8_lights.yaml`](homeassistant/a8_lights.yaml) is a package that gives you, per fixture:
+
+- eight `light.*` entities (one per channel, brightness slider → `?<ch>=<0–1023>`),
+- sensors for temperature, serial, model, mode and the light's clock (polled from `read=config` every 60 s),
+- services `rest_command.a8_set_channel`, `a8_set_all` (all channels in one `preview=` call — use it for
+  sunrise/sunset scenes) and `a8_set_clock`.
+
+Install: enable packages in `configuration.yaml` (`homeassistant: packages: !include_dir_named packages`),
+save the file as `packages/a8_lights.yaml`, check config, restart. Edit the IP at the top for your light;
+duplicate the blocks for additional fixtures. Every template in it was verified against the real reply above.
+
+---
+
 ## How the app was analysed
 
 The AIPAI app (`com.darden.hnws`, APICloud/uzmap hybrid) keeps all its logic as HTML/JS,
@@ -244,6 +288,7 @@ or its decrypted source.
 |---|---|
 | [`tools/a8_probe.py`](tools/a8_probe.py) | Stdlib LAN probe — finds the local API, decodes `sta=getip` and `read=config`; `--set` / `--raw` for write tests (refuses OTA/reset/save) |
 | [`tools/apicloud_decrypt.py`](tools/apicloud_decrypt.py) | Dependency-free APICloud/uzmap RC4 resource decryptor |
+| [`homeassistant/a8_lights.yaml`](homeassistant/a8_lights.yaml) | Home Assistant package — per-channel lights, sensors, services |
 | [`docs/img/`](docs/img/) | Vendor manual pages (OEM + reset procedure) |
 
 ## Disclaimer

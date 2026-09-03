@@ -1,0 +1,446 @@
+# A8 Pro II reef lights — local HTTP control (Route A)
+# Package file. Save as /config/packages/a8_lights.yaml (see ../README.md §8) and make sure configuration.yaml has:
+#   homeassistant:
+#     packages: !include_dir_named packages
+# Protocol: https://github.com/kenbrinkman/A8-Pro-II-Control
+#
+# To add another fixture: copy every block that mentions "light3" / 192.168.1.208
+# and change the number and IP.
+
+rest_command:
+  # Set one channel. pct 0-100 -> firmware 0-1023.
+  a8_set_channel:
+    url: "http://{{ ip }}/?{{ channel }}={{ ((pct | float(0)) * 1023 / 100) | round(0) | int }}"
+    method: GET
+    timeout: 5
+  # Set every channel at once (percent). Useful for scenes.
+  a8_set_all:
+    url: >-
+      http://{{ ip }}/?preview={{ now().hour }}&w={{ w|int(0) }}&b={{ b|int(0) }}&r={{ r|int(0) }}&g={{ g|int(0) }}&b2={{ b2|int(0) }}&p={{ p|int(0) }}&uv={{ uv|int(0) }}&wm={{ wm|int(0) }}
+    method: GET
+    timeout: 5
+  # Sync the light's clock to now (Unix epoch).
+  a8_set_clock:
+    url: "http://{{ ip }}/?clock={{ now().timestamp() | int }}"
+    method: GET
+    timeout: 5
+
+input_number:
+  a8_light3_w:
+    name: "A8 Light 3 White"
+    min: 0
+    max: 100
+    step: 1
+    unit_of_measurement: "%"
+    icon: mdi:brightness-6
+    mode: slider
+  a8_light3_b:
+    name: "A8 Light 3 Blue"
+    min: 0
+    max: 100
+    step: 1
+    unit_of_measurement: "%"
+    icon: mdi:brightness-6
+    mode: slider
+  a8_light3_r:
+    name: "A8 Light 3 Red"
+    min: 0
+    max: 100
+    step: 1
+    unit_of_measurement: "%"
+    icon: mdi:brightness-6
+    mode: slider
+  a8_light3_g:
+    name: "A8 Light 3 Green"
+    min: 0
+    max: 100
+    step: 1
+    unit_of_measurement: "%"
+    icon: mdi:brightness-6
+    mode: slider
+  a8_light3_b2:
+    name: "A8 Light 3 Deep Blue"
+    min: 0
+    max: 100
+    step: 1
+    unit_of_measurement: "%"
+    icon: mdi:brightness-6
+    mode: slider
+  a8_light3_p:
+    name: "A8 Light 3 Purple"
+    min: 0
+    max: 100
+    step: 1
+    unit_of_measurement: "%"
+    icon: mdi:brightness-6
+    mode: slider
+  a8_light3_uv:
+    name: "A8 Light 3 UV"
+    min: 0
+    max: 100
+    step: 1
+    unit_of_measurement: "%"
+    icon: mdi:brightness-6
+    mode: slider
+  a8_light3_wm:
+    name: "A8 Light 3 Warm White"
+    min: 0
+    max: 100
+    step: 1
+    unit_of_measurement: "%"
+    icon: mdi:brightness-6
+    mode: slider
+
+rest:
+  - resource: "http://192.168.1.208/?read=config"
+    scan_interval: 60
+    timeout: 5
+    sensor:
+      - name: "A8 Light 3 Config"
+        unique_id: a8_light3_config
+        value_template: "{{ value.split('|')[0] }}"
+      - name: "A8 Light 3 Temperature"
+        unique_id: a8_light3_temperature
+        unit_of_measurement: "°C"
+        device_class: temperature
+        state_class: measurement
+        # 8-channel reply: temperature is field 21 (17 + 2*(8-6))
+        value_template: "{{ value.split('|')[21] | float(none) }}"
+      - name: "A8 Light 3 Serial"
+        unique_id: a8_light3_serial
+        value_template: "{{ value.split('|')[25] }}"
+      - name: "A8 Light 3 Model"
+        unique_id: a8_light3_model
+        value_template: "{{ value.split('|')[28] }}"
+      - name: "A8 Light 3 Mode"
+        unique_id: a8_light3_mode
+        value_template: "{{ 'schedule' if value.split('|')[1] == '1' else 'manual' }}"
+      - name: "A8 Light 3 Clock"
+        unique_id: a8_light3_clock
+        value_template: >-
+          {{ '%02d:%02d' | format(value.split('|')[22].split(',')[0] | int, value.split('|')[22].split(',')[1] | int) }}
+
+light:
+  - platform: template
+    lights:
+      a8_light3_w:
+        friendly_name: "A8 Light 3 White"
+        unique_id: a8_light3_w_light
+        value_template: "{{ states('input_number.a8_light3_w') | float(0) > 0 }}"
+        level_template: "{{ (states('input_number.a8_light3_w') | float(0) * 2.55) | round(0) | int }}"
+        set_level:
+          - action: input_number.set_value
+            target:
+              entity_id: input_number.a8_light3_w
+            data:
+              value: "{{ (brightness / 2.55) | round(0) | int }}"
+          - action: rest_command.a8_set_channel
+            data:
+              ip: "192.168.1.208"
+              channel: "w"
+              pct: "{{ (brightness / 2.55) | round(0) | int }}"
+        turn_on:
+          - action: input_number.set_value
+            target:
+              entity_id: input_number.a8_light3_w
+            data:
+              value: "{{ 50 if states('input_number.a8_light3_w') | float(0) == 0 else states('input_number.a8_light3_w') }}"
+          - action: rest_command.a8_set_channel
+            data:
+              ip: "192.168.1.208"
+              channel: "w"
+              pct: "{{ 50 if states('input_number.a8_light3_w') | float(0) == 0 else states('input_number.a8_light3_w') }}"
+        turn_off:
+          - action: input_number.set_value
+            target:
+              entity_id: input_number.a8_light3_w
+            data:
+              value: 0
+          - action: rest_command.a8_set_channel
+            data:
+              ip: "192.168.1.208"
+              channel: "w"
+              pct: 0
+      a8_light3_b:
+        friendly_name: "A8 Light 3 Blue"
+        unique_id: a8_light3_b_light
+        value_template: "{{ states('input_number.a8_light3_b') | float(0) > 0 }}"
+        level_template: "{{ (states('input_number.a8_light3_b') | float(0) * 2.55) | round(0) | int }}"
+        set_level:
+          - action: input_number.set_value
+            target:
+              entity_id: input_number.a8_light3_b
+            data:
+              value: "{{ (brightness / 2.55) | round(0) | int }}"
+          - action: rest_command.a8_set_channel
+            data:
+              ip: "192.168.1.208"
+              channel: "b"
+              pct: "{{ (brightness / 2.55) | round(0) | int }}"
+        turn_on:
+          - action: input_number.set_value
+            target:
+              entity_id: input_number.a8_light3_b
+            data:
+              value: "{{ 50 if states('input_number.a8_light3_b') | float(0) == 0 else states('input_number.a8_light3_b') }}"
+          - action: rest_command.a8_set_channel
+            data:
+              ip: "192.168.1.208"
+              channel: "b"
+              pct: "{{ 50 if states('input_number.a8_light3_b') | float(0) == 0 else states('input_number.a8_light3_b') }}"
+        turn_off:
+          - action: input_number.set_value
+            target:
+              entity_id: input_number.a8_light3_b
+            data:
+              value: 0
+          - action: rest_command.a8_set_channel
+            data:
+              ip: "192.168.1.208"
+              channel: "b"
+              pct: 0
+      a8_light3_r:
+        friendly_name: "A8 Light 3 Red"
+        unique_id: a8_light3_r_light
+        value_template: "{{ states('input_number.a8_light3_r') | float(0) > 0 }}"
+        level_template: "{{ (states('input_number.a8_light3_r') | float(0) * 2.55) | round(0) | int }}"
+        set_level:
+          - action: input_number.set_value
+            target:
+              entity_id: input_number.a8_light3_r
+            data:
+              value: "{{ (brightness / 2.55) | round(0) | int }}"
+          - action: rest_command.a8_set_channel
+            data:
+              ip: "192.168.1.208"
+              channel: "r"
+              pct: "{{ (brightness / 2.55) | round(0) | int }}"
+        turn_on:
+          - action: input_number.set_value
+            target:
+              entity_id: input_number.a8_light3_r
+            data:
+              value: "{{ 50 if states('input_number.a8_light3_r') | float(0) == 0 else states('input_number.a8_light3_r') }}"
+          - action: rest_command.a8_set_channel
+            data:
+              ip: "192.168.1.208"
+              channel: "r"
+              pct: "{{ 50 if states('input_number.a8_light3_r') | float(0) == 0 else states('input_number.a8_light3_r') }}"
+        turn_off:
+          - action: input_number.set_value
+            target:
+              entity_id: input_number.a8_light3_r
+            data:
+              value: 0
+          - action: rest_command.a8_set_channel
+            data:
+              ip: "192.168.1.208"
+              channel: "r"
+              pct: 0
+      a8_light3_g:
+        friendly_name: "A8 Light 3 Green"
+        unique_id: a8_light3_g_light
+        value_template: "{{ states('input_number.a8_light3_g') | float(0) > 0 }}"
+        level_template: "{{ (states('input_number.a8_light3_g') | float(0) * 2.55) | round(0) | int }}"
+        set_level:
+          - action: input_number.set_value
+            target:
+              entity_id: input_number.a8_light3_g
+            data:
+              value: "{{ (brightness / 2.55) | round(0) | int }}"
+          - action: rest_command.a8_set_channel
+            data:
+              ip: "192.168.1.208"
+              channel: "g"
+              pct: "{{ (brightness / 2.55) | round(0) | int }}"
+        turn_on:
+          - action: input_number.set_value
+            target:
+              entity_id: input_number.a8_light3_g
+            data:
+              value: "{{ 50 if states('input_number.a8_light3_g') | float(0) == 0 else states('input_number.a8_light3_g') }}"
+          - action: rest_command.a8_set_channel
+            data:
+              ip: "192.168.1.208"
+              channel: "g"
+              pct: "{{ 50 if states('input_number.a8_light3_g') | float(0) == 0 else states('input_number.a8_light3_g') }}"
+        turn_off:
+          - action: input_number.set_value
+            target:
+              entity_id: input_number.a8_light3_g
+            data:
+              value: 0
+          - action: rest_command.a8_set_channel
+            data:
+              ip: "192.168.1.208"
+              channel: "g"
+              pct: 0
+      a8_light3_b2:
+        friendly_name: "A8 Light 3 Deep Blue"
+        unique_id: a8_light3_b2_light
+        value_template: "{{ states('input_number.a8_light3_b2') | float(0) > 0 }}"
+        level_template: "{{ (states('input_number.a8_light3_b2') | float(0) * 2.55) | round(0) | int }}"
+        set_level:
+          - action: input_number.set_value
+            target:
+              entity_id: input_number.a8_light3_b2
+            data:
+              value: "{{ (brightness / 2.55) | round(0) | int }}"
+          - action: rest_command.a8_set_channel
+            data:
+              ip: "192.168.1.208"
+              channel: "b2"
+              pct: "{{ (brightness / 2.55) | round(0) | int }}"
+        turn_on:
+          - action: input_number.set_value
+            target:
+              entity_id: input_number.a8_light3_b2
+            data:
+              value: "{{ 50 if states('input_number.a8_light3_b2') | float(0) == 0 else states('input_number.a8_light3_b2') }}"
+          - action: rest_command.a8_set_channel
+            data:
+              ip: "192.168.1.208"
+              channel: "b2"
+              pct: "{{ 50 if states('input_number.a8_light3_b2') | float(0) == 0 else states('input_number.a8_light3_b2') }}"
+        turn_off:
+          - action: input_number.set_value
+            target:
+              entity_id: input_number.a8_light3_b2
+            data:
+              value: 0
+          - action: rest_command.a8_set_channel
+            data:
+              ip: "192.168.1.208"
+              channel: "b2"
+              pct: 0
+      a8_light3_p:
+        friendly_name: "A8 Light 3 Purple"
+        unique_id: a8_light3_p_light
+        value_template: "{{ states('input_number.a8_light3_p') | float(0) > 0 }}"
+        level_template: "{{ (states('input_number.a8_light3_p') | float(0) * 2.55) | round(0) | int }}"
+        set_level:
+          - action: input_number.set_value
+            target:
+              entity_id: input_number.a8_light3_p
+            data:
+              value: "{{ (brightness / 2.55) | round(0) | int }}"
+          - action: rest_command.a8_set_channel
+            data:
+              ip: "192.168.1.208"
+              channel: "p"
+              pct: "{{ (brightness / 2.55) | round(0) | int }}"
+        turn_on:
+          - action: input_number.set_value
+            target:
+              entity_id: input_number.a8_light3_p
+            data:
+              value: "{{ 50 if states('input_number.a8_light3_p') | float(0) == 0 else states('input_number.a8_light3_p') }}"
+          - action: rest_command.a8_set_channel
+            data:
+              ip: "192.168.1.208"
+              channel: "p"
+              pct: "{{ 50 if states('input_number.a8_light3_p') | float(0) == 0 else states('input_number.a8_light3_p') }}"
+        turn_off:
+          - action: input_number.set_value
+            target:
+              entity_id: input_number.a8_light3_p
+            data:
+              value: 0
+          - action: rest_command.a8_set_channel
+            data:
+              ip: "192.168.1.208"
+              channel: "p"
+              pct: 0
+      a8_light3_uv:
+        friendly_name: "A8 Light 3 UV"
+        unique_id: a8_light3_uv_light
+        value_template: "{{ states('input_number.a8_light3_uv') | float(0) > 0 }}"
+        level_template: "{{ (states('input_number.a8_light3_uv') | float(0) * 2.55) | round(0) | int }}"
+        set_level:
+          - action: input_number.set_value
+            target:
+              entity_id: input_number.a8_light3_uv
+            data:
+              value: "{{ (brightness / 2.55) | round(0) | int }}"
+          - action: rest_command.a8_set_channel
+            data:
+              ip: "192.168.1.208"
+              channel: "uv"
+              pct: "{{ (brightness / 2.55) | round(0) | int }}"
+        turn_on:
+          - action: input_number.set_value
+            target:
+              entity_id: input_number.a8_light3_uv
+            data:
+              value: "{{ 50 if states('input_number.a8_light3_uv') | float(0) == 0 else states('input_number.a8_light3_uv') }}"
+          - action: rest_command.a8_set_channel
+            data:
+              ip: "192.168.1.208"
+              channel: "uv"
+              pct: "{{ 50 if states('input_number.a8_light3_uv') | float(0) == 0 else states('input_number.a8_light3_uv') }}"
+        turn_off:
+          - action: input_number.set_value
+            target:
+              entity_id: input_number.a8_light3_uv
+            data:
+              value: 0
+          - action: rest_command.a8_set_channel
+            data:
+              ip: "192.168.1.208"
+              channel: "uv"
+              pct: 0
+      a8_light3_wm:
+        friendly_name: "A8 Light 3 Warm White"
+        unique_id: a8_light3_wm_light
+        value_template: "{{ states('input_number.a8_light3_wm') | float(0) > 0 }}"
+        level_template: "{{ (states('input_number.a8_light3_wm') | float(0) * 2.55) | round(0) | int }}"
+        set_level:
+          - action: input_number.set_value
+            target:
+              entity_id: input_number.a8_light3_wm
+            data:
+              value: "{{ (brightness / 2.55) | round(0) | int }}"
+          - action: rest_command.a8_set_channel
+            data:
+              ip: "192.168.1.208"
+              channel: "wm"
+              pct: "{{ (brightness / 2.55) | round(0) | int }}"
+        turn_on:
+          - action: input_number.set_value
+            target:
+              entity_id: input_number.a8_light3_wm
+            data:
+              value: "{{ 50 if states('input_number.a8_light3_wm') | float(0) == 0 else states('input_number.a8_light3_wm') }}"
+          - action: rest_command.a8_set_channel
+            data:
+              ip: "192.168.1.208"
+              channel: "wm"
+              pct: "{{ 50 if states('input_number.a8_light3_wm') | float(0) == 0 else states('input_number.a8_light3_wm') }}"
+        turn_off:
+          - action: input_number.set_value
+            target:
+              entity_id: input_number.a8_light3_wm
+            data:
+              value: 0
+          - action: rest_command.a8_set_channel
+            data:
+              ip: "192.168.1.208"
+              channel: "wm"
+              pct: 0
+
+automation:
+  - id: a8_light3_slider_push
+    alias: "A8 Light 3 - push slider to light"
+    mode: queued
+    triggers:
+      - trigger: state
+        entity_id: [input_number.a8_light3_w,input_number.a8_light3_b,input_number.a8_light3_r,input_number.a8_light3_g,input_number.a8_light3_b2,input_number.a8_light3_p,input_number.a8_light3_uv,input_number.a8_light3_wm]
+    conditions:
+      - condition: template
+        value_template: "{{ trigger.to_state.context.parent_id is none }}"
+    actions:
+      - action: rest_command.a8_set_channel
+        data:
+          ip: "192.168.1.208"
+          channel: "{{ trigger.entity_id.split('_')[-1] }}"
+          pct: "{{ trigger.to_state.state }}"
