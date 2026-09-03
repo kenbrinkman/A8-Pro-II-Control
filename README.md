@@ -267,9 +267,9 @@ router page and an unrelated device) — the probe handles that; only a `|`-deli
 - services `rest_command.a8_set_channel`, `a8_set_all` (all channels in one `preview=` call — use it for
   sunrise/sunset scenes) and `a8_set_clock`.
 
-Install: enable packages in `configuration.yaml` (`homeassistant: packages: !include_dir_named packages`),
-save the file as `packages/a8_lights.yaml`, check config, restart. Edit the IP at the top for your light;
-duplicate the blocks for additional fixtures. Every template in it was verified against the real reply above.
+Install steps, behaviour notes (assumed state, the two scales, keeping the light in manual mode), adding
+more fixtures, and a photoperiod automation skeleton are in
+**[`homeassistant/README.md`](homeassistant/README.md)**.
 
 ---
 
@@ -288,7 +288,7 @@ or its decrypted source.
 |---|---|
 | [`tools/a8_probe.py`](tools/a8_probe.py) | Stdlib LAN probe — finds the local API, decodes `sta=getip` and `read=config`; `--set` / `--raw` for write tests (refuses OTA/reset/save) |
 | [`tools/apicloud_decrypt.py`](tools/apicloud_decrypt.py) | Dependency-free APICloud/uzmap RC4 resource decryptor |
-| [`homeassistant/a8_lights.yaml`](homeassistant/a8_lights.yaml) | Home Assistant package — per-channel lights, sensors, services |
+| [`homeassistant/`](homeassistant/) | Home Assistant package (per-channel lights, sensors, services) and its install guide |
 | [`docs/img/`](docs/img/) | Vendor manual pages (OEM + reset procedure) |
 
 ## Disclaimer
