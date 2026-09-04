@@ -1,5 +1,7 @@
 # AIPAI A8 Reef Light — Home Assistant integration
 
+**Status: installed and working on Home Assistant 2026.9 with an A8 Pro II (`A8PRO6`).**
+
 Local control of AIPAI / A+ Intelligent Control **A8** reef lights (A8 Pro II, A8 SE, A8 S, A8 X, A8 HP
 and the A7 series) over their built-in HTTP server. No cloud, no vendor account, no YAML.
 
