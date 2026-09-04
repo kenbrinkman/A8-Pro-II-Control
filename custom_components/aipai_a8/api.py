@@ -22,8 +22,11 @@ from .const import (
     CHANNEL_NAMES_BLUE,
     CHANNEL_NAMES_HP,
     CHANNEL_NAMES_STANDARD,
+    MIN_CONFIG_FIELDS,
     RAW_MAX,
     REQUEST_TIMEOUT,
+    TEMP_MAX_C,
+    TEMP_MIN_C,
     WRITE_SPACING,
 )
 
@@ -81,6 +84,22 @@ def _int(v: str | None) -> int | None:
     return int(fv) if fv is not None else None
 
 
+def _plausible_temp(v: float | None) -> float | None:
+    """Discard an obviously wrong heatsink reading.
+
+    The fixture sometimes answers with the temperature field zeroed (seen on
+    two lights within seconds of each other, one poll each). 0 degrees C is not
+    a heatsink temperature in a living room -- it lands in HA history as a 32 F
+    spike. Out-of-range becomes None and the coordinator carries the previous
+    reading forward.
+    """
+    if v is None or not (TEMP_MIN_C <= v <= TEMP_MAX_C):
+        if v is not None:
+            _LOGGER.debug("discarding implausible temperature %.1f C", v)
+        return None
+    return v
+
+
 def parse_config(raw: str) -> A8Config:
     """Decode the `read=config` reply.
 
@@ -94,6 +113,13 @@ def parse_config(raw: str) -> A8Config:
     if not raw or "|" not in raw:
         raise A8ProtocolError(f"not a config string: {raw[:40]!r}")
     f = [x.strip() for x in raw.split("|")]
+    # A short reply is a truncated/transient answer, not a 6-channel light.
+    # Parsing it anyway reads the wrong field for everything after the
+    # schedule block, which is how a bogus temperature gets through.
+    if len(f) < MIN_CONFIG_FIELDS:
+        raise A8ProtocolError(
+            f"config string has {len(f)} fields, expected at least {MIN_CONFIG_FIELDS}"
+        )
     n = 8 if len(f) > 28 else 6
     d = 2 * (n - 6)
 
@@ -121,7 +147,7 @@ def parse_config(raw: str) -> A8Config:
         fan_cutoff=_float(_f(f, 4)),
         levels_pct=levels,
         schedule=schedule,
-        temperature=_float(_f(f, 17 + d)),
+        temperature=_plausible_temp(_float(_f(f, 17 + d))),
         clock=clock,
         timer_on=_int(_f(f, 19 + d)),
         timer_off=_int(_f(f, 20 + d)),

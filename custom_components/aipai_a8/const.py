@@ -10,6 +10,15 @@ REQUEST_TIMEOUT = 5  # seconds
 WRITE_SPACING = 0.15  # seconds between consecutive channel commands to one fixture
 RAW_MAX = 1023  # live channel command is 10-bit
 
+# Sanity bounds for a read=config reply. A 6-channel fixture answers with 25
+# fields, an 8-channel one with 29; anything shorter is a truncated/transient
+# reply. The heatsink thermistor reads room temperature at rest and the
+# firmware's own thermal cutoff tops out in the 80s, so a value outside this
+# range (notably a zeroed field) is bad data, not a measurement.
+MIN_CONFIG_FIELDS = 25
+TEMP_MIN_C = 1.0
+TEMP_MAX_C = 120.0
+
 # Firmware channel order. Wire keys are identical on every model.
 CHANNEL_KEYS: tuple[str, ...] = ("w", "b", "r", "g", "b2", "p", "uv", "wm")
 

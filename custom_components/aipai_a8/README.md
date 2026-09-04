@@ -52,6 +52,12 @@ Give the light a DHCP reservation in your router first so the IP doesn't change.
   The two services below are the only things that write it (one flash write per call — don't call
   them every minute).
 
+- **Bad replies are dropped, not shown.** The firmware occasionally answers with a truncated config
+  string or a zeroed temperature field. A reply with fewer than 25 fields is rejected outright (parsing
+  it would shift every later field), a heatsink reading outside 1–120 °C is discarded and the previous
+  value held, and a reply carrying a different serial is ignored. In every case the last good data
+  stands until the next poll (v0.2.1).
+
 ## Services (v0.2.0)
 
 - **`aipai_a8.set_schedule`** — `sunrise`, `full_day`, `sunset`, `night`, `peak`, optional

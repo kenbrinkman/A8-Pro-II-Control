@@ -135,6 +135,12 @@ A single `|`-delimited string:
 firmware interpolates — the whole photoperiod, readable and writable. A reply of just `A+` means the device
 answered but did not return a config (the app treats it as "not directly connected").
 
+Two transient faults are worth guarding against, both seen on hardware: a **truncated** reply (fewer
+than 25 fields — parsing it anyway silently shifts every field after the schedule block, so the
+temperature, serial and model all come out wrong), and a reply whose **temperature field reads `0`**
+for a single poll. Reject anything shorter than 25 fields, and treat a heatsink reading outside
+roughly 1–120 °C as no reading at all rather than as a measurement.
+
 ---
 
 ## 4. `save=` blob
@@ -257,6 +263,8 @@ Findings:
 | **Live sets are temporary** | A live set is a preview. The firmware re-applies its **stored** config on its own timer (observed: channels set to 0 came back to the stored 50 % after ~5–10 min, twice, no reboot), and after any **reboot** (power loss, or a burst of ~24 rapid commands crashed one fixture). The app hides this by calling `save=` after every slider drag. Pace direct HTTP writes. |
 | **`save=` works** | Verified: blob exactly as §4 (channel values are **0–100 %**, not 0–1023), reply `true`, `read=config` reflects it immediately, and the light holds the new stored levels through the re-apply cycle. Fan thresholds can be passed through unchanged (65/50/75 stayed). |
 | **Schedule mode** | `save=` with mode `1`, 24 hourly points per channel and timezone `-4`: the light runs the curve itself and came on at the right level within a few minutes. Timezone takes effect on the **next `clock=`** — always send `clock=<epoch>` after a save; `[22]` then reads local time. |
+
+| **Transient bad fields** | Two lights answered one poll each with the temperature field zeroed, seconds apart — a 0 °C heatsink reading in a warm room. Sanity-check the value (and the field count) rather than trusting every reply; integration v0.2.1 drops out-of-range readings and holds the previous one. |
 
 Two other devices on the network answered on port 80 with something other than a config string (a
 router page and an unrelated device) — the probe handles that; only a `|`-delimited reply counts.

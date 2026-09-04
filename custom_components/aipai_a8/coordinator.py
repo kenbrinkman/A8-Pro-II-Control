@@ -12,6 +12,7 @@ Entities restore their last state on HA restart and write it back in here.
 
 from __future__ import annotations
 
+from dataclasses import replace
 from datetime import timedelta
 import logging
 import time
@@ -191,6 +192,20 @@ class A8Coordinator(DataUpdateCoordinator[A8Config]):
             # The light is clearly alive, so keep the last good data.
             _LOGGER.debug("%s: transient non-config reply (%s), keeping last data", self.client.host, err)
             return self.data
+
+        # A reply that parses but carries the wrong serial is a misaligned or
+        # half-written answer, not this fixture. Keep the last good data.
+        if cfg.serial and self.serial and cfg.serial != self.serial:
+            _LOGGER.debug(
+                "%s: config reply has serial %s, expected %s; keeping last data",
+                self.client.host, cfg.serial, self.serial,
+            )
+            return self.data
+
+        # A dropped temperature reading (see _plausible_temp) should not blank
+        # the sensor or land in history as a spike -- hold the previous value.
+        if cfg.temperature is None and self.data is not None and self.data.temperature is not None:
+            cfg = replace(cfg, temperature=self.data.temperature)
 
         if self._offline:
             # The fixture was unreachable and is back: it has almost certainly
