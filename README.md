@@ -254,7 +254,9 @@ Findings:
 | **Reply to a set** | The literal string `A+` — an acknowledgement, not an error. |
 | **Read-back** | `read=config` reports the **stored** level, not the live one — after `?b2=1023` it still says 50. Live state is tracked client-side (as the app does); treat sliders in HA as assumed-state. |
 | **Factory defaults** | Timezone **UTC+8**, so the light's own schedule runs on Beijing time until you set it. Fan thresholds 65/50/75 (the app overwrites these with 35/30/80 on every save). Manual mode, all channels 50 %. |
-| **Persistence** | A live set holds. But a **reboot** (power loss, or a burst of ~24 rapid commands crashed one fixture) returns the light to its stored levels — 50 % on every channel, switch on — so it "turns itself on". Integration v0.1.1 re-sends levels when a light reappears; pace direct HTTP writes. |
+| **Live sets are temporary** | A live set is a preview. The firmware re-applies its **stored** config on its own timer (observed: channels set to 0 came back to the stored 50 % after ~5–10 min, twice, no reboot), and after any **reboot** (power loss, or a burst of ~24 rapid commands crashed one fixture). The app hides this by calling `save=` after every slider drag. Pace direct HTTP writes. |
+| **`save=` works** | Verified: blob exactly as §4 (channel values are **0–100 %**, not 0–1023), reply `true`, `read=config` reflects it immediately, and the light holds the new stored levels through the re-apply cycle. Fan thresholds can be passed through unchanged (65/50/75 stayed). |
+| **Schedule mode** | `save=` with mode `1`, 24 hourly points per channel and timezone `-4`: the light runs the curve itself and came on at the right level within a few minutes. Timezone takes effect on the **next `clock=`** — always send `clock=<epoch>` after a save; `[22]` then reads local time. |
 
 Two other devices on the network answered on port 80 with something other than a config string (a
 router page and an unrelated device) — the probe handles that; only a `|`-delimited reply counts.
@@ -265,7 +267,9 @@ Two options, same protocol underneath:
 
 **[`custom_components/aipai_a8/`](custom_components/aipai_a8/) — the integration (recommended).**
 Add a light by IP in the UI and get one device with a master dimmer, one dimmer per channel,
-temperature/mode/clock sensors and a "push levels" button. Installable through HACS as a custom
+temperature/mode/clock sensors, a "push levels" button and — since v0.2.0 — two services,
+`aipai_a8.set_schedule` (store a photoperiod, light runs it itself) and `aipai_a8.set_manual`
+(store fixed levels / park dark), both backed by `save=`. Installable through HACS as a custom
 repository. Verified on HA 2026.9 against the fixture above. See its
 [README](custom_components/aipai_a8/README.md).
 
