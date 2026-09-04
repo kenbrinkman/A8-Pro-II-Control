@@ -1,4 +1,8 @@
-# Home Assistant integration — A8 Pro II over local HTTP
+# Home Assistant YAML package — A8 Pro II over local HTTP
+
+> **There is now a proper integration** in [`custom_components/aipai_a8/`](../custom_components/aipai_a8/)
+> that gives you one device per fixture with a master dimmer, installable via HACS. Prefer that. This
+> YAML package is kept as a reference and a fallback.
 
 Everything here talks to the light directly on your LAN (`http://<light-ip>/?…`). No cloud, no AIPAI
 account, no MQTT broker. Requires only that the light is on the same network as Home Assistant and has a

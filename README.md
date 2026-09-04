@@ -8,8 +8,8 @@ the AIPAI Android app, plus a stdlib-only probe you can run against your own fix
 >
 > **Status: Route A confirmed on hardware (3 Sep 2026).** An A8 Pro II (firmware model string `A8PRO6`,
 > 2024 firmware) on home Wi-Fi answers `GET http://<ip>/?read=config` and drives its channels from
-> `GET http://<ip>/?b2=1023` — no app, no account, no cloud. A ready-to-use Home Assistant package is in
-> [`homeassistant/`](homeassistant/). Details in §8.
+> `GET http://<ip>/?b2=1023` — no app, no account, no cloud. A **Home Assistant integration** (one device
+> per fixture, installable via HACS) is in [`custom_components/aipai_a8/`](custom_components/aipai_a8/). Details in §8.
 
 Vendor: 济南海内无双科技有限公司 (Jinan Hainei Wushuang Technology, Jinan, China). App published as
 "darden inc."; backend `doseen.com` → Alibaba Cloud. Lights are marketed as Radion XR30 clones
@@ -260,16 +260,16 @@ router page and an unrelated device) — the probe handles that; only a `|`-deli
 
 ### Home Assistant
 
-[`homeassistant/a8_lights.yaml`](homeassistant/a8_lights.yaml) is a package that gives you, per fixture:
+Two options, same protocol underneath:
 
-- eight `light.*` entities (one per channel, brightness slider → `?<ch>=<0–1023>`),
-- sensors for temperature, serial, model, mode and the light's clock (polled from `read=config` every 60 s),
-- services `rest_command.a8_set_channel`, `a8_set_all` (all channels in one `preview=` call — use it for
-  sunrise/sunset scenes) and `a8_set_clock`.
+**[`custom_components/aipai_a8/`](custom_components/aipai_a8/) — the integration (recommended).**
+Add a light by IP in the UI and get one device with a master dimmer, one dimmer per channel,
+temperature/mode/clock sensors and a "push levels" button. Installable through HACS as a custom
+repository. See its [README](custom_components/aipai_a8/README.md).
 
-Install steps, behaviour notes (assumed state, the two scales, keeping the light in manual mode), adding
-more fixtures, and a photoperiod automation skeleton are in
-**[`homeassistant/README.md`](homeassistant/README.md)**.
+**[`homeassistant/a8_lights.yaml`](homeassistant/a8_lights.yaml) — a YAML package.** The same control as
+loose `rest_command` / template entities, no device object. Kept as a reference and fallback; see
+[`homeassistant/README.md`](homeassistant/README.md).
 
 ---
 
@@ -288,7 +288,8 @@ or its decrypted source.
 |---|---|
 | [`tools/a8_probe.py`](tools/a8_probe.py) | Stdlib LAN probe — finds the local API, decodes `sta=getip` and `read=config`; `--set` / `--raw` for write tests (refuses OTA/reset/save) |
 | [`tools/apicloud_decrypt.py`](tools/apicloud_decrypt.py) | Dependency-free APICloud/uzmap RC4 resource decryptor |
-| [`homeassistant/`](homeassistant/) | Home Assistant package (per-channel lights, sensors, services) and its install guide |
+| [`custom_components/aipai_a8/`](custom_components/aipai_a8/) | Home Assistant integration — one device per fixture, HACS-installable |
+| [`homeassistant/`](homeassistant/) | Alternative YAML package (no device object) and its guide |
 | [`docs/img/`](docs/img/) | Vendor manual pages (OEM + reset procedure) |
 
 ## Disclaimer

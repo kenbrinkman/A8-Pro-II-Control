@@ -1,0 +1,43 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Add an AIPAI A8 reef light",
+        "description": "Enter the light's IP address on your network (for example {example}). Give the light a DHCP reservation in your router so it doesn't change.",
+        "data": {
+          "host": "IP address"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Could not reach the light. Check the IP address and that it is on the same network as Home Assistant.",
+      "not_a8": "Something answered at that address, but it does not speak the A8 protocol.",
+      "unknown": "Unexpected error — see the Home Assistant log."
+    },
+    "abort": {
+      "already_configured": "This light (same serial number) is already set up."
+    }
+  },
+  "entity": {
+    "light": {
+      "master": { "name": "Master" },
+      "channel": { "name": "Channel" }
+    },
+    "sensor": {
+      "temperature": { "name": "Temperature" },
+      "mode": {
+        "name": "Mode",
+        "state": { "manual": "Manual", "schedule": "Schedule" }
+      },
+      "clock": { "name": "Device clock" },
+      "timezone": { "name": "Device timezone" },
+      "fan_on": { "name": "Fan on temperature" },
+      "fan_off": { "name": "Fan off temperature" },
+      "thermal_cutoff": { "name": "Thermal cutoff" }
+    },
+    "button": {
+      "push_levels": { "name": "Push levels to light" },
+      "sync_clock": { "name": "Sync clock" }
+    }
+  }
+}
