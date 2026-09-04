@@ -170,6 +170,142 @@ def pct_to_raw(pct: float) -> int:
     return int(round(RAW_MAX * pct / 100))
 
 
+def _pct(v: float) -> int:
+    return max(0, min(100, int(v)))
+
+
+def build_save_blob(
+    *,
+    channels: int,
+    mode: int,
+    levels_pct: list[int],
+    schedule: list[list[int]],
+    fan_on: float | None = None,
+    fan_off: float | None = None,
+    fan_cutoff: float | None = None,
+    timer_on: int = 0,
+    timer_off: int = 0,
+    timezone: str = "8",
+) -> str:
+    """Build the `save=` payload exactly as the vendor app's DevicesSave() does.
+
+    Layout, fields joined with `x`, every `,` replaced by `y`:
+        on x <mode> x <fan_on> x <fan_off> x <fan_cutoff>
+           x <level×n> x <24-point row×n> x <timer_on> x <timer_off> x <tz>
+
+    - Field 0 is always the literal `on`: the app never writes `off` (its own
+      comment says the device ignores a save while switched off).
+    - The app hard-codes fan 35/30/80; here the caller passes the fixture's own
+      values (read from `read=config`) so a save does not silently change them.
+      The app warns the firmware ignores a cutoff above ~84 °C, so cap at 80.
+    - Levels and schedule points are 0-100 percent (NOT the 0-1023 live scale).
+    - The channel count must match the fixture: a 6-channel blob on 8-channel
+      firmware shifts every field after the padding point.
+    """
+    if channels not in (6, 8):
+        raise ValueError(f"channels must be 6 or 8, got {channels}")
+    if len(levels_pct) != channels:
+        raise ValueError(f"need {channels} levels, got {len(levels_pct)}")
+    if len(schedule) != channels:
+        raise ValueError(f"need {channels} schedule rows, got {len(schedule)}")
+    for i, row in enumerate(schedule):
+        if len(row) != 24:
+            raise ValueError(f"schedule row {i} has {len(row)} points, need 24")
+
+    def _fan(v: float | None, default: int, hi: int = 80) -> str:
+        if v is None:
+            return str(default)
+        return str(int(min(hi, max(0, v))))
+
+    parts: list[str] = [
+        "on",
+        str(1 if int(mode) == 1 else 0),
+        _fan(fan_on, 35),
+        _fan(fan_off, 30),
+        _fan(fan_cutoff, 80),
+    ]
+    parts += [str(_pct(v)) for v in levels_pct]
+    parts += [",".join(str(_pct(p)) for p in row) for row in schedule]
+    parts += [str(int(timer_on)), str(int(timer_off)), str(timezone)]
+    return "x".join(parts).replace(",", "y")
+
+
+def photoperiod_points(
+    sunrise: int, full_day: int, sunset: int, night: int, peak: float
+) -> list[float]:
+    """Master intensity (0-100) at each of the 24 hour marks.
+
+    Times are minutes after midnight. The cycle may cross midnight (e.g.
+    11:45 -> 15:45 -> 20:45 -> 00:45): everything is measured as minutes
+    since sunrise, modulo 24 h. Ramps are linear: 0 -> peak from sunrise to
+    full_day, peak until sunset, peak -> 0 until night, then 0.
+    """
+    day = 1440
+    up = (full_day - sunrise) % day
+    hold = (sunset - sunrise) % day
+    end = (night - sunrise) % day
+    if not (0 < up <= hold <= end):
+        raise ValueError("times must be ordered sunrise < full_day <= sunset <= night (mod 24 h)")
+    out: list[float] = []
+    for h in range(24):
+        m = (h * 60 - sunrise) % day
+        if m < up:
+            v = peak * m / up
+        elif m < hold:
+            v = peak
+        elif m < end and end > hold:
+            v = peak * (1 - (m - hold) / (end - hold))
+        else:
+            v = 0.0
+        out.append(max(0.0, min(100.0, v)))
+    return out
+
+
+def scale_points(master: list[float], ratio_pct: float) -> list[int]:
+    """Apply a channel's spectrum ratio (0-100 %) to the master curve, rounding to ints.
+
+    The vendor app floors and caps at 98; we round and cap at 100, the range
+    the firmware accepts for stored levels.
+    """
+    r = max(0.0, min(100.0, float(ratio_pct))) / 100
+    return [max(0, min(100, int(round(v * r)))) for v in master]
+
+
+def tz_string(utc_offset_seconds: int | float) -> str:
+    """HA's UTC offset -> the fixture's timezone field ('8', '-4', '5.5')."""
+    hours = utc_offset_seconds / 3600
+    return str(int(hours)) if float(hours).is_integer() else f"{hours:g}"
+
+
+def blob_from_config(cfg: A8Config, **overrides) -> str:
+    """Rebuild a save blob from a decoded `read=config`, with optional overrides.
+
+    Overrides accept the same keyword names as build_save_blob(). Used to make
+    minimal, hardware-safe changes (e.g. one stored level) and by the
+    integration to preserve fan thresholds and timers it does not manage.
+    """
+    schedule: list[list[int]] = []
+    for row in cfg.schedule:
+        pts = [_int(p) or 0 for p in row.split(",")] if row else []
+        if len(pts) != 24:
+            pts = [0] * 24
+        schedule.append(pts)
+    kwargs = dict(
+        channels=cfg.channels,
+        mode=cfg.mode,
+        levels_pct=list(cfg.levels_pct),
+        schedule=schedule,
+        fan_on=cfg.fan_on,
+        fan_off=cfg.fan_off,
+        fan_cutoff=cfg.fan_cutoff,
+        timer_on=cfg.timer_on or 0,
+        timer_off=cfg.timer_off or 0,
+        timezone=cfg.timezone or "8",
+    )
+    kwargs.update(overrides)
+    return build_save_blob(**kwargs)
+
+
 class A8Client:
     """Async HTTP client for one fixture."""
 
@@ -239,3 +375,15 @@ class A8Client:
     async def set_clock(self, epoch: int) -> str:
         """Set the fixture clock. Note the fixture applies its own timezone (factory UTC+8)."""
         return await self._get(f"clock={int(epoch)}")
+
+    async def save_config(self, blob: str) -> None:
+        """Write the stored configuration (`save=<blob>`). This is a flash write.
+
+        Build `blob` with build_save_blob() / blob_from_config(). The firmware
+        answers the literal `true` on success.
+        """
+        if not blob.startswith("onx"):
+            raise ValueError("save blob must start with 'onx'")
+        reply = await self._get(f"save={blob}")
+        if reply != "true":
+            raise A8ProtocolError(f"save= answered {reply[:40]!r}, expected 'true'")

@@ -6,8 +6,6 @@ protocol and can brick a fixture; they will not be exposed here.
 
 from __future__ import annotations
 
-import time
-
 from homeassistant.components.button import ButtonEntity
 from homeassistant.const import EntityCategory
 from homeassistant.core import HomeAssistant
@@ -49,5 +47,4 @@ class A8SyncClockButton(A8Entity, ButtonEntity):
         self._attr_unique_id = f"{coordinator.serial}_sync_clock"
 
     async def async_press(self) -> None:
-        await self.coordinator.client.set_clock(int(time.time()))
-        await self.coordinator.async_request_refresh()
+        await self.coordinator.sync_clock()

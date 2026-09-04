@@ -123,6 +123,64 @@ def report(host, port, cfg, raw, ident):
     print(f"\n  raw reply ({len(raw)} bytes):\n  {raw[:400]}")
 
 
+def build_blob(cfg, mode=None, levels=None, schedule=None, timezone=None, timer_on=None, timer_off=None):
+    """Rebuild the save= blob from a decoded config, changing only what is given.
+
+    Same layout as the app's DevicesSave(): fields joined by 'x', commas -> 'y'.
+    Fan thresholds are preserved from the fixture (the app would overwrite them with 35/30/80).
+    Levels and schedule points are PERCENT 0-100.
+    """
+    n = cfg["channels"]
+    lv = [cfg["levels_pct"].get(k) or 0 for k in ROADS[:n]]
+    if levels:
+        lv = [int(levels.get(k, v)) for k, v in zip(ROADS[:n], lv)]
+    rows = []
+    for k in ROADS[:n]:
+        r = cfg["schedule"].get(k, "")
+        pts = [int(float(p)) for p in r.split(",")] if r else [0] * 24
+        if len(pts) != 24:
+            pts = [0] * 24
+        if schedule and k in schedule:
+            pts = [int(p) for p in schedule[k]]
+        rows.append(",".join(str(max(0, min(100, p))) for p in pts))
+    parts = ["on", str(mode if mode is not None else cfg["mode"]),
+             str(int(float(cfg["temp_on"] or 35))), str(int(float(cfg["temp_off"] or 30))),
+             str(min(80, int(float(cfg["temp_out"] or 80))))]
+    parts += [str(max(0, min(100, v))) for v in lv]
+    parts += rows
+    parts += [str(timer_on if timer_on is not None else int(cfg["timer_on"] or 0)),
+              str(timer_off if timer_off is not None else int(cfg["timer_off"] or 0)),
+              str(timezone if timezone is not None else (cfg["timezone"] or "8"))]
+    return "x".join(parts).replace(",", "y")
+
+
+def save_test(host, changes, dry_run):
+    """Guarded save= test: read, rebuild with one change, show diff, confirm, send, re-read."""
+    _, port, cfg, raw, _, _, _ = probe(host)
+    if not cfg:
+        print(f"{host}: no config string, cannot save"); return
+    print(f"before: mode={cfg['mode']} levels={cfg['levels_pct']} tz={cfg['timezone']} "
+          f"fan={cfg['temp_on']}/{cfg['temp_off']}/{cfg['temp_out']} timer={cfg['timer_on']}/{cfg['timer_off']}")
+    blob = build_blob(cfg, **changes)
+    same = build_blob(cfg)
+    print(f"unchanged rebuild == fixture: {len(same.split('x'))} fields")
+    print(f"blob ({len(blob)} chars): {blob[:80]}...{blob[-20:]}")
+    if dry_run:
+        print("dry run — nothing sent"); return
+    if input(f"send save= to {host}? this writes flash [y/N] ").strip().lower() != "y":
+        print("aborted"); return
+    reply = http_get(host, port, "save=" + blob, timeout=8)
+    print("reply:", repr(reply), "(expected 'true')")
+    import time; time.sleep(1.5)
+    raw2 = http_get(host, port, "read=config")
+    cfg2 = parse_config(raw2)
+    if cfg2:
+        print(f"after:  mode={cfg2['mode']} levels={cfg2['levels_pct']} tz={cfg2['timezone']} "
+              f"fan={cfg2['temp_on']}/{cfg2['temp_off']}/{cfg2['temp_out']} clock={cfg2['clock']}")
+    else:
+        print("after: read=config ->", repr(raw2))
+
+
 def probe(host):
     """Returns (host, port, cfg, raw, open_ports, ident, note)."""
     found = [p for p in PORTS if tcp_open(host, p)]
@@ -149,9 +207,37 @@ def main():
                     help="WRITE TEST: set one channel, e.g. b2=1023 (needs exactly one host)")
     ap.add_argument("--raw", metavar="QUERY",
                     help="send an arbitrary query string, e.g. 'preview=12&w=50&b=50' (one host)")
+    ap.add_argument("--save-level", metavar="CH=PCT", action="append",
+                    help="SAVE TEST: rewrite stored config changing only this channel's stored level "
+                         "(percent), e.g. w=40. Repeatable. Asks before writing.")
+    ap.add_argument("--save-mode", type=int, choices=[0, 1], help="SAVE TEST: set mode 0 manual / 1 schedule")
+    ap.add_argument("--save-tz", metavar="TZ", help="SAVE TEST: set timezone, e.g. -4")
+    ap.add_argument("--save-schedule", metavar="CH=p0,p1,...,p23", action="append",
+                    help="SAVE TEST: 24 hourly percent points for a channel; repeatable")
+    ap.add_argument("--dry-run", action="store_true", help="with --save-*: build and print, send nothing")
     a = ap.parse_args()
 
     hosts = list(a.hosts)
+    if a.save_level or a.save_mode is not None or a.save_tz or a.save_schedule:
+        if len(hosts) != 1:
+            ap.error("--save-* needs exactly one host")
+        changes = {}
+        if a.save_level:
+            changes["levels"] = {k: int(v) for k, v in (s.split("=") for s in a.save_level)}
+        if a.save_schedule:
+            changes["schedule"] = {}
+            for s in a.save_schedule:
+                k, v = s.split("=", 1)
+                pts = [int(p) for p in v.split(",")]
+                if len(pts) != 24:
+                    ap.error(f"{k}: need 24 points, got {len(pts)}")
+                changes["schedule"][k] = pts
+        if a.save_mode is not None:
+            changes["mode"] = a.save_mode
+        if a.save_tz:
+            changes["timezone"] = a.save_tz
+        save_test(hosts[0], changes, a.dry_run)
+        return
     if a.scan:
         hosts += [str(h) for h in ipaddress.ip_network(a.scan, strict=False).hosts()]
     if not hosts:

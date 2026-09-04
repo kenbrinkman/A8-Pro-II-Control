@@ -1,0 +1,56 @@
+set_schedule:
+  fields:
+    device_id:
+      required: true
+      selector:
+        device:
+          integration: aipai_a8
+          multiple: true
+    sunrise:
+      required: true
+      example: "11:45:00"
+      selector:
+        time: {}
+    full_day:
+      required: true
+      example: "15:45:00"
+      selector:
+        time: {}
+    sunset:
+      required: true
+      example: "20:45:00"
+      selector:
+        time: {}
+    night:
+      required: true
+      example: "00:45:00"
+      selector:
+        time: {}
+    peak:
+      default: 100
+      selector:
+        number:
+          min: 0
+          max: 100
+          unit_of_measurement: "%"
+    ratios:
+      example: '{"w": 24, "b": 100, "r": 24, "g": 24, "b2": 100, "p": 100, "uv": 100, "wm": 24}'
+      selector:
+        object: {}
+
+set_manual:
+  fields:
+    device_id:
+      required: true
+      selector:
+        device:
+          integration: aipai_a8
+          multiple: true
+    levels:
+      example: '{"w": 0, "b": 30, "b2": 30}'
+      selector:
+        object: {}
+    "off":
+      default: false
+      selector:
+        boolean: {}

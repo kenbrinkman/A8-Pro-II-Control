@@ -1,7 +1,9 @@
 {
   "domain": "aipai_a8",
   "name": "AIPAI A8 Reef Light",
-  "codeowners": ["@kenbrinkman"],
+  "codeowners": [
+    "@kenbrinkman"
+  ],
   "config_flow": true,
   "dependencies": [],
   "documentation": "https://github.com/kenbrinkman/A8-Pro-II-Control",
@@ -9,5 +11,5 @@
   "iot_class": "local_polling",
   "issue_tracker": "https://github.com/kenbrinkman/A8-Pro-II-Control/issues",
   "requirements": [],
-  "version": "0.1.1"
+  "version": "0.2.0"
 }

@@ -12,7 +12,7 @@ One **device** per fixture, added in the UI by IP address:
 | `light.<name>_master` | Whole-fixture on/off and a proportional dimmer — scales every channel, like the app's intensity slider |
 | `light.<name>_white` … `_warm_white` | One dimmer per LED channel (8 on A8 Pro/SE, 6 on older models; B models get Blue 1/2/3 etc.) |
 | `sensor.<name>_temperature` | Heatsink temperature, polled every 60 s |
-| `sensor.<name>_mode` | `manual` / `schedule` — keep it on **manual** so HA is in charge |
+| `sensor.<name>_mode` | `manual` / `schedule` — which one the fixture is running (see services below) |
 | `sensor.<name>_device_clock`, `_device_timezone` | Diagnostic — the fixture's own clock (factory timezone is UTC+8) |
 | `sensor.<name>_fan_on` / `_fan_off` / `_thermal_cutoff` | Diagnostic, disabled by default |
 | `button.<name>_push_levels_to_light` | Resend every channel's level — use after the fixture lost power |
@@ -47,8 +47,26 @@ Give the light a DHCP reservation in your router first so the IP doesn't change.
   unavailable and immediately re-sends HA's levels (v0.1.1). **Push levels to light** does the same by hand.
 - **Don't flood it.** A burst of back-to-back commands has been seen to reboot a fixture. The client
   paces consecutive channel writes (150 ms); keep that in mind if you script direct HTTP calls.
-- **Photoperiod.** Drive it from HA (a `time_pattern` automation setting the channel lights) in your
-  own timezone with real DST. Leave the fixture in manual mode.
+- **Live sets are temporary.** Anything sent with the sliders is a preview: every few minutes (and
+  after any reboot) the firmware re-applies its *stored* config. What persists is what `save=` wrote.
+  The two services below are the only things that write it (one flash write per call — don't call
+  them every minute).
+
+## Services (v0.2.0)
+
+- **`aipai_a8.set_schedule`** — `sunrise`, `full_day`, `sunset`, `night`, `peak`, optional
+  `ratios` (per-channel % of the master curve; default = HA's current channel set points). Computes
+  24 hourly points per channel, stores them with the fixture in **schedule** mode, sets its timezone to
+  HA's current UTC offset and syncs its clock. The light then runs the day cycle on its own: no
+  polling, survives reboots. Call it again whenever a time, peak or spectrum changes — and after a
+  DST change (an automation on `homeassistant.start` + a daily check is enough). Firmware
+  interpolates between hour points, so 11:45 becomes a ramp anchored on the 11:00 and 12:00 points.
+- **`aipai_a8.set_manual`** — stores fixed levels in **manual** mode. `off: true` parks the light dark
+  (stays dark through reboots); `levels` sets explicit values; omitting both stores what HA is
+  currently sending. Use this when the tank is not running.
+
+While in schedule mode the sliders still work as short-lived overrides (a few minutes, until the
+firmware's next re-apply).
 
 ## Protocol
 

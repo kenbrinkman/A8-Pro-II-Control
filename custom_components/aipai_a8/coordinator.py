@@ -14,12 +14,22 @@ from __future__ import annotations
 
 from datetime import timedelta
 import logging
+import time
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
+from homeassistant.util import dt as dt_util
 
-from .api import A8Client, A8Config, A8ConnectionError, A8Error, channel_names
+from .api import (
+    A8Client,
+    A8Config,
+    A8ConnectionError,
+    A8Error,
+    blob_from_config,
+    channel_names,
+    tz_string,
+)
 from .const import CHANNEL_KEYS, DEFAULT_SCAN_INTERVAL, DOMAIN
 
 _LOGGER = logging.getLogger(__name__)
@@ -114,6 +124,60 @@ class A8Coordinator(DataUpdateCoordinator[A8Config]):
             self.master_on = on
         await self.push_all()
 
+    # ---- persistence (save= — flash writes, use sparingly) ----------------
+
+    def _local_tz(self) -> str:
+        offset = dt_util.now().utcoffset()
+        return tz_string(offset.total_seconds() if offset else 0)
+
+    async def _save(self, **overrides) -> None:
+        """Rebuild the stored config from a fresh read=config, apply overrides, save.
+
+        Reading first preserves what we don't manage (fan thresholds, timers).
+        The fixture applies its timezone to the clock only when the clock is
+        (re)sent, so the clock is always re-sent after a save.
+        """
+        try:
+            cfg = await self.client.get_config()
+        except A8Error as err:
+            raise UpdateFailed(f"{self.client.host}: read before save failed: {err}") from err
+        overrides.setdefault("timezone", self._local_tz())
+        blob = blob_from_config(cfg, **overrides)
+        try:
+            await self.client.save_config(blob)
+            await self.client.set_clock(int(time.time()))
+        except A8Error as err:
+            raise UpdateFailed(f"{self.client.host}: save failed: {err}") from err
+        _LOGGER.info(
+            "%s: saved mode=%s tz=%s", self.client.host, overrides.get("mode", cfg.mode), overrides["timezone"]
+        )
+        await self.async_request_refresh()
+
+    async def save_schedule(self, points: dict[str, list[int]]) -> None:
+        """Store a 24-point curve per channel and put the fixture in schedule mode.
+
+        The fixture then runs the photoperiod itself (survives reboots, no
+        polling needed). Channels not in `points` get a flat zero row.
+        """
+        rows = [list(points.get(k, [0] * 24)) for k in self.keys]
+        await self._save(mode=1, schedule=rows)
+
+    async def save_manual(self, levels: dict[str, int] | None = None) -> None:
+        """Put the fixture in manual mode with these stored levels.
+
+        `levels` omitted = HA's current effective levels (what the LEDs are
+        doing now). All zeros = parked dark; the fixture stays dark through
+        reboots and its own re-apply cycle.
+        """
+        if levels is None:
+            levels = {k: self.effective_pct(k) for k in self.keys}
+        lv = [int(levels.get(k, 0)) for k in self.keys]
+        await self._save(mode=0, levels_pct=lv)
+
+    async def sync_clock(self) -> None:
+        await self.client.set_clock(int(time.time()))
+        await self.async_request_refresh()
+
     # ---- polling ---------------------------------------------------------
 
     async def _async_update_data(self) -> A8Config:
@@ -131,8 +195,12 @@ class A8Coordinator(DataUpdateCoordinator[A8Config]):
         if self._offline:
             # The fixture was unreachable and is back: it has almost certainly
             # rebooted, and a rebooted A8 comes up at its *stored* levels
-            # (factory: everything 50 %, switch on). Re-assert what HA believes.
+            # (factory: everything 50 %, switch on). Re-assert what HA believes —
+            # unless it is running its own stored schedule, which is exactly
+            # what we want after a reboot.
             self._offline = False
+            if cfg.mode == 1:
+                return cfg
             _LOGGER.info("%s back online; re-sending channel levels", self.client.host)
             try:
                 await self.client.set_channels_pct(

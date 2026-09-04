@@ -48,3 +48,15 @@ CHANNEL_NAMES_HP: tuple[str, ...] = (
 CONF_HOST = "host"
 
 ATTR_RAW = "raw_value"
+
+# Services
+SERVICE_SET_SCHEDULE = "set_schedule"
+SERVICE_SET_MANUAL = "set_manual"
+ATTR_SUNRISE = "sunrise"
+ATTR_FULL_DAY = "full_day"
+ATTR_SUNSET = "sunset"
+ATTR_NIGHT = "night"
+ATTR_PEAK = "peak"
+ATTR_RATIOS = "ratios"
+ATTR_LEVELS = "levels"
+ATTR_OFF = "off"

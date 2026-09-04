@@ -20,24 +20,101 @@
   },
   "entity": {
     "light": {
-      "master": { "name": "Master" },
-      "channel": { "name": "Channel" }
+      "master": {
+        "name": "Master"
+      },
+      "channel": {
+        "name": "Channel"
+      }
     },
     "sensor": {
-      "temperature": { "name": "Temperature" },
+      "temperature": {
+        "name": "Temperature"
+      },
       "mode": {
         "name": "Mode",
-        "state": { "manual": "Manual", "schedule": "Schedule" }
+        "state": {
+          "manual": "Manual",
+          "schedule": "Schedule"
+        }
       },
-      "clock": { "name": "Device clock" },
-      "timezone": { "name": "Device timezone" },
-      "fan_on": { "name": "Fan on temperature" },
-      "fan_off": { "name": "Fan off temperature" },
-      "thermal_cutoff": { "name": "Thermal cutoff" }
+      "clock": {
+        "name": "Device clock"
+      },
+      "timezone": {
+        "name": "Device timezone"
+      },
+      "fan_on": {
+        "name": "Fan on temperature"
+      },
+      "fan_off": {
+        "name": "Fan off temperature"
+      },
+      "thermal_cutoff": {
+        "name": "Thermal cutoff"
+      }
     },
     "button": {
-      "push_levels": { "name": "Push levels to light" },
-      "sync_clock": { "name": "Sync clock" }
+      "push_levels": {
+        "name": "Push levels to light"
+      },
+      "sync_clock": {
+        "name": "Sync clock"
+      }
+    }
+  },
+  "services": {
+    "set_schedule": {
+      "name": "Set schedule",
+      "description": "Store a sunrise/day/sunset/night photoperiod in the light and switch it to schedule mode. The light then runs the day cycle itself, in Home Assistant's timezone, surviving reboots. One flash write per call.",
+      "fields": {
+        "device_id": {
+          "name": "Light",
+          "description": "Which light(s)."
+        },
+        "sunrise": {
+          "name": "Sunrise",
+          "description": "Ramp-up starts (from 0 %)."
+        },
+        "full_day": {
+          "name": "Full day",
+          "description": "Ramp-up reaches peak."
+        },
+        "sunset": {
+          "name": "Sunset",
+          "description": "Ramp-down starts (from peak)."
+        },
+        "night": {
+          "name": "Night",
+          "description": "Ramp-down reaches 0 %. May be after midnight."
+        },
+        "peak": {
+          "name": "Peak intensity",
+          "description": "Master intensity at full day."
+        },
+        "ratios": {
+          "name": "Spectrum ratios",
+          "description": "Per-channel percentage of the master curve (w, b, r, g, b2, p, uv, wm). Omitted: the channel set points currently in Home Assistant."
+        }
+      }
+    },
+    "set_manual": {
+      "name": "Set manual",
+      "description": "Switch the light to manual mode and store fixed levels. Use 'off' to park the light dark; it stays dark through reboots. One flash write per call.",
+      "fields": {
+        "device_id": {
+          "name": "Light",
+          "description": "Which light(s)."
+        },
+        "levels": {
+          "name": "Levels",
+          "description": "Per-channel stored level in percent. Omitted: the levels Home Assistant is currently sending."
+        },
+        "off": {
+          "name": "Off",
+          "description": "Store 0 % on every channel."
+        }
+      }
     }
   }
 }
