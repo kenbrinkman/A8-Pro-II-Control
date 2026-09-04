@@ -254,7 +254,7 @@ Findings:
 | **Reply to a set** | The literal string `A+` — an acknowledgement, not an error. |
 | **Read-back** | `read=config` reports the **stored** level, not the live one — after `?b2=1023` it still says 50. Live state is tracked client-side (as the app does); treat sliders in HA as assumed-state. |
 | **Factory defaults** | Timezone **UTC+8**, so the light's own schedule runs on Beijing time until you set it. Fan thresholds 65/50/75 (the app overwrites these with 35/30/80 on every save). Manual mode, all channels 50 %. |
-| **Persistence** | Not yet tested — whether a live set survives the light's internal timer. The HA package can add a periodic resend if it doesn't. |
+| **Persistence** | A live set holds. But a **reboot** (power loss, or a burst of ~24 rapid commands crashed one fixture) returns the light to its stored levels — 50 % on every channel, switch on — so it "turns itself on". Integration v0.1.1 re-sends levels when a light reappears; pace direct HTTP writes. |
 
 Two other devices on the network answered on port 80 with something other than a config string (a
 router page and an unrelated device) — the probe handles that; only a `|`-delimited reply counts.

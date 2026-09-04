@@ -65,6 +65,7 @@ class A8Coordinator(DataUpdateCoordinator[A8Config]):
         self.master_pct: int = 100
         self.master_on: bool = True
         self.data = initial
+        self._offline = False
 
     # ---- model -----------------------------------------------------------
 
@@ -117,11 +118,26 @@ class A8Coordinator(DataUpdateCoordinator[A8Config]):
 
     async def _async_update_data(self) -> A8Config:
         try:
-            return await self.client.get_config()
+            cfg = await self.client.get_config()
         except A8ConnectionError as err:
+            self._offline = True
             raise UpdateFailed(f"{self.client.host} unreachable: {err}") from err
         except A8Error as err:
             # The firmware occasionally answers "A+" instead of a config string.
             # The light is clearly alive, so keep the last good data.
             _LOGGER.debug("%s: transient non-config reply (%s), keeping last data", self.client.host, err)
             return self.data
+
+        if self._offline:
+            # The fixture was unreachable and is back: it has almost certainly
+            # rebooted, and a rebooted A8 comes up at its *stored* levels
+            # (factory: everything 50 %, switch on). Re-assert what HA believes.
+            self._offline = False
+            _LOGGER.info("%s back online; re-sending channel levels", self.client.host)
+            try:
+                await self.client.set_channels_pct(
+                    {k: self.effective_pct(k) for k in self.keys}
+                )
+            except A8Error as err:
+                _LOGGER.warning("%s: re-send after reconnect failed: %s", self.client.host, err)
+        return cfg

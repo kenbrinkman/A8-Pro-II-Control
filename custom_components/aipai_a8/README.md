@@ -42,8 +42,11 @@ Give the light a DHCP reservation in your router first so the IP doesn't change.
   `set point × master %`. Master off sends 0 to every channel; master on restores them. Changing a
   channel sends one HTTP call; changing the master sends one per channel (all hardware-verified
   commands, no `preview=`).
-- **Lost power?** The fixture boots to its stored config. Press **Push levels to light**, or automate it
-  on the temperature sensor coming back from `unavailable`.
+- **Reboots.** A fixture that loses power or crashes boots to its *stored* config — factory: switch on,
+  every channel 50 % — i.e. it lights itself up. The integration detects the light coming back from
+  unavailable and immediately re-sends HA's levels (v0.1.1). **Push levels to light** does the same by hand.
+- **Don't flood it.** A burst of back-to-back commands has been seen to reboot a fixture. The client
+  paces consecutive channel writes (150 ms); keep that in mind if you script direct HTTP calls.
 - **Photoperiod.** Drive it from HA (a `time_pattern` automation setting the channel lights) in your
   own timezone with real DST. Leave the fixture in manual mode.
 

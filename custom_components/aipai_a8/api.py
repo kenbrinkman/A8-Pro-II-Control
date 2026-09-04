@@ -24,6 +24,7 @@ from .const import (
     CHANNEL_NAMES_STANDARD,
     RAW_MAX,
     REQUEST_TIMEOUT,
+    WRITE_SPACING,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -225,8 +226,14 @@ class A8Client:
         await self.set_channel_raw(key, pct_to_raw(pct))
 
     async def set_channels_pct(self, values: dict[str, float]) -> None:
-        """Live-set several channels with individual (hardware-verified) commands."""
-        for key, pct in values.items():
+        """Live-set several channels with individual (hardware-verified) commands.
+
+        Paced: a burst of back-to-back requests has been seen to reboot a
+        fixture (which then comes up at its stored 50 % levels).
+        """
+        for i, (key, pct) in enumerate(values.items()):
+            if i:
+                await asyncio.sleep(WRITE_SPACING)
             await self.set_channel_pct(key, pct)
 
     async def set_clock(self, epoch: int) -> str:

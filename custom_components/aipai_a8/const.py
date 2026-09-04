@@ -7,6 +7,7 @@ MANUFACTURER = "AIPAI (Jinan Hainei Wushuang Technology)"
 
 DEFAULT_SCAN_INTERVAL = 60  # seconds between read=config polls
 REQUEST_TIMEOUT = 5  # seconds
+WRITE_SPACING = 0.15  # seconds between consecutive channel commands to one fixture
 RAW_MAX = 1023  # live channel command is 10-bit
 
 # Firmware channel order. Wire keys are identical on every model.
