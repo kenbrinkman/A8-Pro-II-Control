@@ -1,10 +1,16 @@
 # A8 Pro II — Control Protocol Reference
 
-*Reverse-engineered from AIPAI Android app v3.1.82. Companion to `AquaPiMasterReference.md` §13.2 / §13.7
-("Lighting is not yet in HA").*
+*Reverse-engineered from AIPAI Android app v3.1.82.*
+
+> **Redacted public copy.** This document was written for a private build log and is published here
+> with the author's own identifiers removed — fixture serials, LAN addresses, host names and Home
+> Assistant device IDs. The vendor's hardcoded broker credentials and the app's RC4 bundle key are
+> also withheld: both are global to the product rather than secrets of this install, and both are
+> recoverable from the APK with `tools/apicloud_decrypt.py` by the method in §8. Nothing about the
+> protocol itself has been removed. Placeholders read `<like-this>`.
 
 Status (3 Sep 2026): **Route A confirmed on hardware and running in Home Assistant.**
-Light 3 (A8 Pro II, firmware model `A8PRO6`, serial 3156988, 192.168.1.208) answers on port 80 in
+The test fixture (A8 Pro II, firmware model `A8PRO6`) answers on port 80 in
 station mode. A custom integration (`aipai_a8`) is installed via HACS and shows as one device,
 "A8 Pro Light 3". See §9 for what was learned on hardware and §10 for the HA integration.
 Public repo: https://github.com/kenbrinkman/A8-Pro-II-Control
@@ -17,14 +23,14 @@ Public repo: https://github.com/kenbrinkman/A8-Pro-II-Control
 |---|---|
 | Is there a local (no-cloud) control path? | **Yes — confirmed.** An HTTP server on the light, port 80, alive in station mode on 2024 firmware. The app only *uses* it for ≤2023 firmware and in "direct link" AP mode, but it is always there. |
 | Cloud transport | MQTT over **plain WebSocket**, `ws://mqtt.doseen.com:8083/mqtt` — **no TLS** |
-| Cloud auth | Hardcoded global credentials `aplus` / `19491001`, identical for every user of the app |
+| Cloud auth | A hardcoded global username/password pair, identical for every user of the app — values withheld here, see §7 |
 | Per-device auth | **None.** Addressing is by serial number alone |
 | Command grammar | Identical over both transports — a `key=value` query string |
 | Channels | 8 on A8-PRO (`w b r g b2 p uv wm`). Live set 0–1023; config/schedule values 0–100 % |
 | Per-channel HA control feasible? | **Done** — `custom_components/aipai_a8`, one device per fixture (§10) |
 
 The app is an APICloud/uzmap hybrid — all logic is HTML/JS, RC4-encrypted inside the APK with a key
-statically recoverable from `lib/*/libsec.so`. For this build the key is `0059be11662664f80e9b`.
+statically recoverable from `lib/*/libsec.so` (the key for a given build is not reproduced here).
 Method: `newdive/uzmap-resource-extractor`; a dependency-free reimplementation lives in `decrypt.py`.
 
 **Vendor:** 济南海内无双科技有限公司 (Jinan Hainei Wushuang Technology Co., Ltd), Jinan, China.
@@ -174,11 +180,12 @@ build's "no proprietary apps or cloud" rule outright.
 
 ### Route B — DNS redirect to local Mosquitto ★★ best if A fails
 
-The lights connect *out* to `mqtt.doseen.com`. Tower already runs Mosquitto (`AquaPiMasterReference.md` §6.2).
+The lights connect *out* to `mqtt.doseen.com`, so a broker already running on the LAN can stand in
+for it.
 
-1. Point `mqtt.doseen.com` at Tower's Mosquitto via a local DNS override (Pi-hole / AdGuard /
+1. Point `mqtt.doseen.com` at that local broker via a DNS override (Pi-hole / AdGuard /
    router-level rewrite / dnsmasq).
-2. Accept `aplus` / `19491001` on the local broker.
+2. Accept the vendor's global credentials on the local broker.
 3. Subscribe `light/+/dev`, publish to `light/<SN>/mob`.
 4. Firewall the lights from the internet entirely.
 
@@ -192,8 +199,8 @@ no vendor cloud, and it keeps the schedule/OTA machinery intact.
 
 ### Route C — vendor cloud broker ✓ guaranteed, but cloud-dependent
 
-Connect HA's MQTT client to `ws://mqtt.doseen.com:8083/mqtt` with `aplus` / `19491001`, publish
-to `light/<SN>/mob`:
+Connect HA's MQTT client to `ws://mqtt.doseen.com:8083/mqtt` with the vendor's global credentials,
+publish to `light/<SN>/mob`:
 
 ```json
 {"type": "w512", "msg": "w=512"}
@@ -268,8 +275,9 @@ Needed for routes B and C. Visible in the AIPAI app's device list, and usually o
 These are properties of the product, not of this build, but they bear on how the lights should be
 treated on the network.
 
-1. **Global hardcoded broker credentials.** `aplus` / `19491001` are compiled into every copy of the
-   app. There is no per-user or per-device secret.
+1. **Global hardcoded broker credentials.** One username/password pair is compiled into every copy
+   of the app — recoverable in a few minutes from the decrypted bundle, and deliberately not
+   reprinted here. There is no per-user or per-device secret.
 2. **No transport encryption.** `ws://` on port 8083. Commands and configuration cross the internet
    in clear text.
 3. **No device-level authorisation.** Anyone who knows a serial number can publish to
@@ -295,7 +303,7 @@ unnecessary. Given item 4, this is worth doing whether or not the HA integration
 | `a8_probe.py` | LAN probe — `sta=getip` + `read=config`, decodes all fields, `--set` / `--raw`, refuses OTA/reset/save |
 | `custom_components/aipai_a8/` | HA integration (§10) |
 | `homeassistant/a8_lights.yaml` | YAML-package alternative (fallback) |
-| `REVIEW-2026-09-03.md` | Review of the original write-up — the corrections that went into the README |
+| `REVIEW-2026-09-03.md` | Review of the original write-up — the corrections that went into the README (kept privately) |
 
 Key source lines: `public.js:130` (broker + credentials), `public.js:442` (`SetDevOrder`, transport
 switch), `public.js:538` (`DevicesSave`), `ctrl-light.html:410` (`serverUrl`), `:429` (`roadName`),
@@ -305,12 +313,12 @@ switch), `public.js:538` (`DevicesSave`), `ctrl-light.html:410` (`serverUrl`), `
 
 ## 9. Hardware confirmation (3 Sep 2026)
 
-Light 3 factory-reset, joined to the 2.4 GHz LAN, probed from the MacBook with `tools/a8_probe.py`:
+One fixture factory-reset, joined to the 2.4 GHz LAN, probed with `tools/a8_probe.py`:
 
 ```
-LOCAL HTTP API IS ALIVE  →  http://192.168.1.208:80/
-sta=getip: ip=192.168.1.208 serial=3156988 flag=false
-model=A8PRO6  serial=3156988  channels=8  switch=on  mode=0 (manual)
+LOCAL HTTP API IS ALIVE  →  http://<light-ip>:80/
+sta=getip: ip=<light-ip> serial=<serial> flag=false
+model=A8PRO6  serial=<serial>  channels=8  switch=on  mode=0 (manual)
 temp=43.19°C  clock=7,14  timer on/off=0/0  tz=UTC8  fan on/off/cutoff=65/50/75
 ```
 
@@ -322,18 +330,18 @@ temp=43.19°C  clock=7,14  timer on/off=0/0  tz=UTC8  fan on/off/cutoff=65/50/75
 | Read-back | `read=config` shows **stored** levels (50 after `b2=1023`). HA must own live state. |
 | Factory defaults | tz UTC+8 (schedule would run on Beijing time), fan 65/50/75 (app overwrites with 35/30/80 on save), manual mode, all channels 50 %. |
 | Heatsink temp | 43 → 50 °C over ~2 h at ≥50 %, no water under it. Fan on at 65. |
-| Persistence | Live sets hold. **But a reboot restores stored levels** (50 % all channels, switch on). Light 3 rebooted at 21:13 on 3 Sep right after two presets fired 48 commands in 3 s → came on by itself at night. Fix: integration v0.1.1 re-pushes on reconnect + paces writes 150 ms; photoperiod re-pushes every 5 min while on. |
+| Persistence | Live sets hold. **But a reboot restores stored levels** (50 % all channels, switch on). The fixture rebooted right after two presets fired 48 commands in 3 s → came on by itself at night. Fix: integration v0.1.1 re-pushes on reconnect + paces writes 150 ms; photoperiod re-pushes every 5 min while on. |
 | Lights 1 & 2 | Not yet reset; add later by IP. |
 
-Two other LAN hosts answer on port 80 with non-config pages (192.168.1.183, .197) — the probe only
+Other LAN hosts may answer on port 80 with non-config pages — the probe only
 counts a `|`-delimited reply.
 
 ---
 
 ## 10. Home Assistant — installed and working
 
-**`custom_components/aipai_a8/`** (in the repo, HACS custom repository). Installed on HA 2026.9.0
-(`homeassistant.local`), added by IP, first try. Device "A8 Pro Light 3", area Living Room.
+**`custom_components/aipai_a8/`** (in the repo, HACS custom repository). Installed on HA 2026.9.0,
+added by IP, first try — one device per fixture.
 
 | Entity | Notes |
 |---|---|
@@ -356,8 +364,8 @@ integration is in so two controllers don't fight over one light. Lesson from tha
 `light: - platform: template` form was removed in current HA — template lights must live under
 `template:`.
 
-All three fixtures added: Light 1 = 192.168.1.155, Light 2 = 192.168.1.165, Light 3 = 192.168.1.208
-(entity prefix `living_room_a8_pro_light_N_`).
+All three fixtures added, each by its own LAN address (entity prefix
+`<area>_a8_pro_light_N_`).
 
 ### Reef Command → Lighting tab (`/reef-command/lighting`)
 
@@ -432,8 +440,6 @@ one-minute "hold levels" automation that papered over this has been deleted.
   "Planned (HA)" area plus the 24 hourly points the firmware actually stores, which is what shows how
   much the hourly quantisation rounds off a 11:45 sunrise. The old history graph of HA's master
   intensity was meaningless in schedule mode, since HA never sees the light's own ramp.
-- Device IDs: Light 1 `035ceaf2a508529fd15533315c19f4f2`, Light 2 `8e3bc4f2195510962cbf37561dc93c9e`,
-  Light 3 `6a236d62b2ebc95ba2369bf957e25bee`.
 
 ### Physical state
 
@@ -442,7 +448,7 @@ plumbed. Masters off in HA, schedule toggle off, spectrum AB+ sitting in the set
 
 ### Still open
 
-- DHCP reservations for .155 / .165 / .208.
+- DHCP reservations for the three fixtures — the integration addresses them by IP.
 - Test `preview=` (would make a master change one call instead of eight).
 - The Lighting tab's "Spectrum — last 24 h" history graphs are still HA's model; in schedule mode they
   only reflect what HA sent, not what the light ran.
