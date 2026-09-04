@@ -9,6 +9,7 @@ from __future__ import annotations
 from homeassistant.components.button import ButtonEntity
 from homeassistant.const import EntityCategory
 from homeassistant.core import HomeAssistant
+from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from .coordinator import A8ConfigEntry, A8Coordinator
@@ -33,6 +34,13 @@ class A8PushLevelsButton(A8Entity, ButtonEntity):
         self._attr_unique_id = f"{coordinator.serial}_push_levels"
 
     async def async_press(self) -> None:
+        # push_all() is a deliberate no-op in schedule mode. Say so rather than
+        # letting the button look like it worked.
+        if not self.coordinator._live_sets_reach_the_led():
+            raise HomeAssistantError(
+                f"{self.coordinator.client.host} is in schedule mode and ignores live "
+                "levels. Switch it to manual (aipai_a8.set_manual) first."
+            )
         await self.coordinator.push_all()
 
 

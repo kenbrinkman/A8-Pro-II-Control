@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import asyncio
+from collections.abc import Awaitable, Callable
 from datetime import time as dt_time
 import logging
 
@@ -26,6 +28,7 @@ from .const import (
     ATTR_SUNSET,
     CHANNEL_KEYS,
     CONF_HOST,
+    DEVICE_SPACING,
     DOMAIN,
     SERVICE_SET_MANUAL,
     SERVICE_SET_SCHEDULE,
@@ -34,7 +37,12 @@ from .coordinator import A8ConfigEntry, A8Coordinator
 
 _LOGGER = logging.getLogger(__name__)
 
-PLATFORMS: list[Platform] = [Platform.LIGHT, Platform.SENSOR, Platform.BUTTON]
+PLATFORMS: list[Platform] = [
+    Platform.LIGHT,
+    Platform.SENSOR,
+    Platform.BINARY_SENSOR,
+    Platform.BUTTON,
+]
 
 _PCT = vol.All(vol.Coerce(float), vol.Range(min=0, max=100))
 _CHANNEL_MAP = vol.Schema({vol.In(CHANNEL_KEYS): _PCT})
@@ -80,6 +88,41 @@ def _coordinators_for(hass: HomeAssistant, device_ids: list[str]) -> list[A8Coor
     return out
 
 
+async def _apply_each(
+    coordinators: list[A8Coordinator],
+    action: Callable[[A8Coordinator], Awaitable[None]],
+    what: str,
+) -> None:
+    """Run `action` against every fixture, then report the ones that failed.
+
+    These services take a list of devices, and the obvious loop -- raise on the
+    first error -- means one flaky fixture silently cancels the write for every
+    fixture after it. That is what happened on 04 Sep 2026: a single stalled
+    `read=config` on Light 1 aborted the whole photoperiod write, so all three
+    stayed parked dark while the dashboard showed the schedule running. Every
+    fixture is independent hardware; treat it that way. Same reasoning as the
+    `continue_on_error` already on `script.reef_spectrum_apply`.
+
+    Writes are spaced: three back-to-back configuration writes across fixtures
+    sharing one 2.4 GHz radio is the pattern behind both the timeouts and the
+    burst reboot.
+    """
+    failures: list[str] = []
+    for i, coordinator in enumerate(coordinators):
+        if i:
+            await asyncio.sleep(DEVICE_SPACING)
+        try:
+            await action(coordinator)
+        except Exception as err:  # noqa: BLE001 -- UpdateFailed and friends
+            _LOGGER.error("%s: %s failed: %s", coordinator.client.host, what, err)
+            failures.append(f"{coordinator.client.host}: {err}")
+    if failures:
+        raise HomeAssistantError(
+            f"{what} failed on {len(failures)} of {len(coordinators)} lights -- "
+            + "; ".join(failures)
+        )
+
+
 async def _svc_set_schedule(call: ServiceCall) -> None:
     hass = call.hass
     try:
@@ -93,29 +136,29 @@ async def _svc_set_schedule(call: ServiceCall) -> None:
     except ValueError as err:
         raise ServiceValidationError(str(err)) from err
     ratios: dict[str, float] | None = call.data.get(ATTR_RATIOS)
-    for coordinator in _coordinators_for(hass, call.data["device_id"]):
+
+    async def _one(coordinator: A8Coordinator) -> None:
         # Default ratios: HA's current channel set points (the spectrum the user dialled in).
         r = ratios if ratios is not None else {k: coordinator.setpoint[k] for k in coordinator.keys}
         points = {k: scale_points(master, r.get(k, 0)) for k in coordinator.keys}
-        try:
-            await coordinator.save_schedule(points)
-        except Exception as err:  # UpdateFailed
-            raise HomeAssistantError(str(err)) from err
+        await coordinator.save_schedule(points)
+
+    await _apply_each(_coordinators_for(hass, call.data["device_id"]), _one, "set_schedule")
 
 
 async def _svc_set_manual(call: ServiceCall) -> None:
     hass = call.hass
-    for coordinator in _coordinators_for(hass, call.data["device_id"]):
+
+    async def _one(coordinator: A8Coordinator) -> None:
         if call.data[ATTR_OFF]:
             levels: dict[str, int] | None = {k: 0 for k in coordinator.keys}
         elif ATTR_LEVELS in call.data:
             levels = {k: int(v) for k, v in call.data[ATTR_LEVELS].items()}
         else:
             levels = None
-        try:
-            await coordinator.save_manual(levels)
-        except Exception as err:  # UpdateFailed
-            raise HomeAssistantError(str(err)) from err
+        await coordinator.save_manual(levels)
+
+    await _apply_each(_coordinators_for(hass, call.data["device_id"]), _one, "set_manual")
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: A8ConfigEntry) -> bool:

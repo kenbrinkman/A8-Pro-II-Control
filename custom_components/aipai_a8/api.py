@@ -22,9 +22,12 @@ from .const import (
     CHANNEL_NAMES_BLUE,
     CHANNEL_NAMES_HP,
     CHANNEL_NAMES_STANDARD,
+    CONFIG_TIMEOUT,
     MIN_CONFIG_FIELDS,
     RAW_MAX,
     REQUEST_TIMEOUT,
+    RETRY_ATTEMPTS,
+    RETRY_BACKOFF,
     TEMP_MAX_C,
     TEMP_MIN_C,
     WRITE_SPACING,
@@ -297,6 +300,25 @@ def scale_points(master: list[float], ratio_pct: float) -> list[int]:
     return [max(0, min(100, int(round(v * r)))) for v in master]
 
 
+def level_mismatch(
+    believed: dict[str, int],
+    stored: dict[str, int],
+    tolerance: int = 0,
+) -> dict[str, tuple[int, int]]:
+    """Channels where the fixture's stored levels disagree with HA's model.
+
+    Returns {channel: (believed, stored)} for channels that differ by more than
+    `tolerance` percentage points; {} when they agree. Channels missing from
+    either side are skipped rather than treated as zero -- an absent value is
+    unknown, not off, and inventing a zero here would manufacture a mismatch.
+    """
+    return {
+        k: (believed[k], stored[k])
+        for k in believed
+        if k in stored and abs(believed[k] - stored[k]) > tolerance
+    }
+
+
 def tz_string(utc_offset_seconds: int | float) -> str:
     """HA's UTC offset -> the fixture's timezone field ('8', '-4', '5.5')."""
     hours = utc_offset_seconds / 3600
@@ -348,16 +370,51 @@ class A8Client:
     def base_url(self) -> str:
         return f"http://{self._host}/"
 
-    async def _get(self, query: str) -> str:
+    async def _get(
+        self,
+        query: str,
+        *,
+        timeout: float = REQUEST_TIMEOUT,
+        attempts: int = RETRY_ATTEMPTS,
+    ) -> str:
+        """Send one command, retrying a connection failure.
+
+        The firmware's HTTP server is single-threaded and stalls under any
+        concurrent load -- a poll landing on one fixture while another is being
+        written, the radio being busy -- and a stall shows up here as a bare
+        `asyncio.TimeoutError`, whose str() is empty (which is why the failure
+        of 04 Sep 2026 logged as a message ending in a colon). Every command in
+        this protocol is idempotent by content, so a single retry is safe and
+        turns that stall into a non-event.
+
+        The retry happens inside the per-host lock so the coordinator's poll
+        cannot slip between the two attempts and stall them both.
+        """
         url = f"{self.base_url}?{query}"
+        last: A8ConnectionError | None = None
         async with self._lock:
-            try:
-                async with self._session.get(
-                    url, timeout=aiohttp.ClientTimeout(total=REQUEST_TIMEOUT)
-                ) as resp:
-                    text = await resp.text(errors="replace")
-            except (aiohttp.ClientError, asyncio.TimeoutError, OSError) as err:
-                raise A8ConnectionError(f"{url}: {err}") from err
+            for attempt in range(1, max(1, attempts) + 1):
+                try:
+                    async with self._session.get(
+                        url, timeout=aiohttp.ClientTimeout(total=timeout)
+                    ) as resp:
+                        text = await resp.text(errors="replace")
+                    break
+                except asyncio.TimeoutError as err:
+                    last = A8ConnectionError(f"{url}: timed out after {timeout:g}s")
+                    last.__cause__ = err
+                except (aiohttp.ClientError, OSError) as err:
+                    # Several of these stringify to "" (ServerDisconnectedError
+                    # among them); name the class so the log says something.
+                    detail = str(err) or type(err).__name__
+                    last = A8ConnectionError(f"{url}: {detail}")
+                    last.__cause__ = err
+                if attempt < max(1, attempts):
+                    _LOGGER.debug("%s (attempt %d), retrying", last, attempt)
+                    await asyncio.sleep(RETRY_BACKOFF)
+            else:
+                assert last is not None
+                raise last
         text = text.strip()
         _LOGGER.debug("%s -> %r", url, text[:120])
         return text
@@ -372,7 +429,7 @@ class A8Client:
 
     async def get_config(self) -> A8Config:
         """`read=config` decoded."""
-        text = await self._get("read=config")
+        text = await self._get("read=config", timeout=CONFIG_TIMEOUT)
         return parse_config(text)
 
     async def set_channel_raw(self, key: str, raw: int) -> None:
@@ -410,6 +467,9 @@ class A8Client:
         """
         if not blob.startswith("onx"):
             raise ValueError("save blob must start with 'onx'")
-        reply = await self._get(f"save={blob}")
+        # A retried save re-sends the identical blob, so a first attempt that
+        # actually landed before timing out costs one extra flash write, not a
+        # wrong configuration.
+        reply = await self._get(f"save={blob}", timeout=CONFIG_TIMEOUT)
         if reply != "true":
             raise A8ProtocolError(f"save= answered {reply[:40]!r}, expected 'true'")

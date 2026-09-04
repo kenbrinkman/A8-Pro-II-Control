@@ -29,9 +29,15 @@ from .api import (
     A8Error,
     blob_from_config,
     channel_names,
+    level_mismatch,
     tz_string,
 )
-from .const import CHANNEL_KEYS, DEFAULT_SCAN_INTERVAL, DOMAIN
+from .const import (
+    CHANNEL_KEYS,
+    DEFAULT_SCAN_INTERVAL,
+    DOMAIN,
+    MISMATCH_TOLERANCE_PCT,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -85,10 +91,58 @@ class A8Coordinator(DataUpdateCoordinator[A8Config]):
             return 0
         return int(round(self.setpoint[key] * self.master_pct / 100))
 
+    def believed_levels(self) -> dict[str, int]:
+        """What HA thinks the LEDs are doing, per channel."""
+        return {k: self.effective_pct(k) for k in self.keys}
+
+    def stored_levels(self) -> dict[str, int] | None:
+        """What the fixture will re-apply from flash, per channel."""
+        if self.data is None:
+            return None
+        return {
+            k: self.data.levels_pct[i]
+            for i, k in enumerate(self.keys)
+            if i < len(self.data.levels_pct)
+        }
+
+    def level_mismatch(self) -> dict[str, tuple[int, int]] | None:
+        """Channels where the stored config disagrees with HA's belief.
+
+        Only meaningful in manual mode. There, the stored levels are what the
+        firmware re-applies on its own timer (and after a reboot), while HA's
+        master and channel sliders write live values that flash never sees. When
+        the two disagree, the fixture is going to walk away from what the
+        dashboard shows -- silently, because the lights are `assumed_state` and
+        nothing reads back the live output. Returns {channel: (believed, stored)}
+        for the channels that differ, {} when they agree, and None when there is
+        nothing to compare (no poll yet, or the fixture is running its own
+        schedule and HA's live model does not apply).
+        """
+        stored = self.stored_levels()
+        if stored is None or self.data is None or self.data.mode == 1:
+            return None
+        return level_mismatch(self.believed_levels(), stored, MISMATCH_TOLERANCE_PCT)
+
     # ---- writes ----------------------------------------------------------
+
+    def _live_sets_reach_the_led(self) -> bool:
+        """False while the fixture is running its own stored curve.
+
+        In schedule mode the firmware re-applies the stored curve on its own
+        timer, so a live `?w=` set is inert -- at best it flickers the output
+        until the next re-apply. Sending them anyway costs eight HTTP requests
+        per fixture for no effect, and a burst of those across three fixtures is
+        the documented way to reboot one. So keep the model in sync and skip the
+        wire. Same reasoning the reconnect re-send already uses.
+        """
+        return self.data is None or self.data.mode != 1
 
     async def push_channel(self, key: str) -> None:
         """Send one channel's effective level."""
+        if not self._live_sets_reach_the_led():
+            _LOGGER.debug("%s: schedule mode, not sending live %s", self.client.host, key)
+            self.async_update_listeners()
+            return
         try:
             await self.client.set_channel_pct(key, self.effective_pct(key))
         except A8Error as err:
@@ -97,6 +151,10 @@ class A8Coordinator(DataUpdateCoordinator[A8Config]):
 
     async def push_all(self) -> None:
         """Send every channel's effective level (master changes, sync)."""
+        if not self._live_sets_reach_the_led():
+            _LOGGER.debug("%s: schedule mode, not sending live levels", self.client.host)
+            self.async_update_listeners()
+            return
         try:
             await self.client.set_channels_pct(
                 {k: self.effective_pct(k) for k in self.keys}
@@ -137,11 +195,27 @@ class A8Coordinator(DataUpdateCoordinator[A8Config]):
         Reading first preserves what we don't manage (fan thresholds, timers).
         The fixture applies its timezone to the clock only when the clock is
         (re)sent, so the clock is always re-sent after a save.
+
+        If that read fails the save falls back to the last good poll rather than
+        giving up: the only fields it supplies are ones this integration does not
+        change (fan thresholds, timers, and the untouched half of levels vs
+        schedule), and they are at most one poll interval stale. Losing a whole
+        photoperiod write because one read stalled is the worse trade -- it is
+        what left the tank dark on 04 Sep 2026.
         """
         try:
             cfg = await self.client.get_config()
         except A8Error as err:
-            raise UpdateFailed(f"{self.client.host}: read before save failed: {err}") from err
+            if self.data is None:
+                raise UpdateFailed(
+                    f"{self.client.host}: read before save failed and no cached config: {err}"
+                ) from err
+            _LOGGER.warning(
+                "%s: read before save failed (%s); saving from the last poll instead",
+                self.client.host,
+                err,
+            )
+            cfg = self.data
         overrides.setdefault("timezone", self._local_tz())
         blob = blob_from_config(cfg, **overrides)
         try:

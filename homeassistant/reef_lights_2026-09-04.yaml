@@ -1,0 +1,126 @@
+# Reef Command — Lighting: the HA-side half of the 04 Sep 2026 fixes.
+#
+# The integration half (v0.2.3) covers the write path: a retry on stalled
+# requests, a longer timeout for read=config/save=, per-fixture isolation so one
+# flaky light no longer cancels the write for the others, and a binary_sensor
+# that reports HA/fixture disagreement instead of hiding it.
+#
+# This file is the part that lives in Home Assistant. Entity IDs are written
+# `<area>_a8_pro_light_N_...`; substitute the area your fixtures are in. Paste
+# each block over the matching object in the automation/dashboard editors —
+# these are not packages and will not load from /config/packages.
+#
+# ---------------------------------------------------------------------------
+# 1. automation.reef_lights_photoperiod
+# ---------------------------------------------------------------------------
+# Two changes to the `actions:` block; triggers, conditions and mode are
+# unchanged.
+#
+#   a) continue_on_error on the save. With v0.2.3 the service already tries
+#      every fixture and only then raises, so the raise is a report, not a
+#      reason to abandon the rest of the automation.
+#
+#   b) Set the masters to peak afterwards. Schedule-on used to write the curve
+#      and leave HA's masters wherever the last schedule-off had parked them —
+#      off — so the dashboard read dark while the tank was lit (reference
+#      §4.1). In v0.2.3 a master change in schedule mode updates HA's model and
+#      sends nothing on the wire, because the firmware ignores live sets while
+#      it runs its own curve. So this costs zero HTTP requests: it is display
+#      honesty only. Before v0.2.3 it would have fired 24 inert writes straight
+#      into the burst pattern that reboots a fixture — do not backport it.
+
+actions:
+  - delay:
+      seconds: 3
+  - action: script.reef_lights_save_schedule
+    continue_on_error: true
+  # HA's master is a multiplier on the channel set points, and the stored curve
+  # is peak × those same ratios, so master = peak is what the fixture is
+  # actually doing at full day. During the ramps sensor.reef_lights_phase is
+  # the honest readout, not this.
+  - action: light.turn_on
+    target:
+      entity_id:
+        - light.<area>_a8_pro_light_1_master
+        - light.<area>_a8_pro_light_2_master
+        - light.<area>_a8_pro_light_3_master
+    data:
+      # brightness_pct wants an int, and 0 would turn the master off and make
+      # every channel read 0 %; the schedule still runs either way.
+      brightness_pct: >-
+        {{ [1, (states('input_number.reef_lights_peak_intensity') | float(70))
+              | round(0) | int] | max }}
+
+# ---------------------------------------------------------------------------
+# 2. automation.reef_lights_schedule_off
+# ---------------------------------------------------------------------------
+# No change needed. Worth knowing why it is still correct under v0.2.3: the
+# light.turn_off runs while the fixture is still in schedule mode, so it now
+# updates HA's model and sends nothing — then set_manual off does the real work
+# with one flash write per fixture (mode 0, all channels 0). That is 24 fewer
+# pointless requests than before, same outcome.
+#
+# Do correct the description, though. It says "park all three lights dark",
+# which is right; it is the *handoff notes* that call schedule-off a "freeze".
+# Schedule off = manual, saved dark.
+
+# ---------------------------------------------------------------------------
+# 3. Lighting tab — stop showing two intensity controls that are never both live
+# ---------------------------------------------------------------------------
+# Peak governs schedule mode; the master governs manual mode. Exactly one of
+# them does anything at any moment and nothing on the dashboard said so.
+# `visibility:` is core HA, works on any card in a sections view, and needs no
+# card-mod — so it survives the card-mod-after-config-write refresh caveat.
+#
+# On the Day Cycle "Peak intensity" card:
+
+visibility:
+  - condition: state
+    entity: input_boolean.reef_lights_schedule
+    state: "on"
+
+# On each of the three Light N master cards (rows 1/2/3), the mirror image:
+#
+# visibility:
+#   - condition: state
+#     entity: input_boolean.reef_lights_schedule
+#     state: "off"
+#
+# The eight per-channel sliders stay visible in both modes: they are the
+# spectrum ratios, and set_schedule reads them to build the curve, so they are
+# live in schedule mode even though the master is not.
+
+# ---------------------------------------------------------------------------
+# 4. New card — the disagreement, made visible
+# ---------------------------------------------------------------------------
+# binary_sensor.*_stored_mismatch (v0.2.3, diagnostic, device class problem) is
+# on when the fixture's saved levels contradict what HA believes it is sending.
+# Expect it on the moment a master moves in manual mode: that is the finding,
+# not a false positive — a live set never reaches flash, so the fixture will
+# revert at its next re-apply. It clears when a save= puts them back in
+# agreement, and reads off in schedule mode.
+#
+# Put this at the top of the Lighting view, visible only when something is
+# actually wrong:
+
+type: entities
+title: Lights disagree with Home Assistant
+entities:
+  - entity: binary_sensor.<area>_a8_pro_light_1_stored_config_differs
+  - entity: binary_sensor.<area>_a8_pro_light_2_stored_config_differs
+  - entity: binary_sensor.<area>_a8_pro_light_3_stored_config_differs
+visibility:
+  - condition: or
+    conditions:
+      - condition: state
+        entity: binary_sensor.<area>_a8_pro_light_1_stored_config_differs
+        state: "on"
+      - condition: state
+        entity: binary_sensor.<area>_a8_pro_light_2_stored_config_differs
+        state: "on"
+      - condition: state
+        entity: binary_sensor.<area>_a8_pro_light_3_stored_config_differs
+        state: "on"
+
+# Confirm the entity_ids after the v0.2.3 restart — they are generated from the
+# device name, and the binary sensors are new.

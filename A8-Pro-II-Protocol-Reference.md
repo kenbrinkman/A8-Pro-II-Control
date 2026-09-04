@@ -544,3 +544,100 @@ onto ~40 % width and never re-measure. Fixed `rows: 4` plus `width: "100%"`,
 Also: apexcharts-card has no top-level `title:` key (that errors as extraneous). The card heading is
 `header.title`, centred with card-mod on `#header` / `#header__title`; ApexCharts' own
 `title: {text, align}` lives under `apex_config` and draws inside the plot area instead.
+
+---
+
+## 13. The write path — how a healthy fixture stayed dark (4 Sep 2026)
+
+Raised as "the lights are still a little weird", investigated from live HA state and the automation
+traces. It is a *fourth* failure mode, independent of the three in the Master/Peak/Schedule note, and
+it is the one that was actually biting.
+
+### 13.1 What happened
+
+| Time | Event |
+|---|---|
+| 13:01 | `automation.reef_lights_schedule_off` ran → all three fixtures manual, saved 0 %, masters off |
+| 14:12 | Masters turned on 100 % in HA (a live set — never reached flash) |
+| 18:39:38 | `input_boolean.reef_lights_schedule` → **on** |
+| 18:39:41 | `automation.reef_lights_photoperiod` fired, waited 3 s, called `script.reef_lights_save_schedule` |
+| 18:39:47 | Script **errored**: `<light-1-ip>: read before save failed: http://<light-1-ip>/?read=config:` |
+| 18:44 | All three fixtures still `manual`, stored 0 %; heatsinks 80–81 °F. Tank dark. Dashboard: schedule on, phase `Day`, peak 25 %, masters on 100 % |
+
+A retry at 18:48 failed the same way — but on the second fixture, having got past the first. Light 1 came up in
+schedule mode; lights 2 and 3 did not. Calling `aipai_a8.set_schedule` once per device, spaced,
+wrote all three.
+
+### 13.2 Two causes, both in the write path
+
+**A stalled request is fatal.** `A8Client._get` had a 5 s timeout and no retry. `read=config` and
+`save=` carry the whole configuration and the firmware's single-threaded HTTP server is visibly
+slower over them than over a live set, so under any concurrent load — a poll landing on one fixture
+while another is being written — the read times out. The give-away in the log is a message ending in
+a bare colon: `asyncio.TimeoutError` stringifies to `""`. Same class of bug as the NaN masking in
+§11.18 and the zeroed-temperature spike in v0.2.1 — the failure was real, the report was useless.
+
+**One fixture's failure cancelled the others.** `set_schedule` and `set_manual` take a device list,
+and `_svc_*` looped and raised on the first error. Everything after the failing fixture was silently
+skipped. `script.reef_spectrum_apply` had already learned this lesson and carries
+`continue_on_error`; the schedule path had not.
+
+The two compound: a one-in-ten stall on any one of three fixtures becomes a coin flip on the whole
+photoperiod write, and the only visible symptom is a dark tank with a dashboard insisting otherwise.
+
+### 13.3 Integration v0.2.3
+
+- **Retry.** `_get` retries a connection failure once (`RETRY_ATTEMPTS = 2`, `RETRY_BACKOFF = 0.8 s`),
+  inside the per-host lock so a poll cannot slip between the attempts. Every command in this protocol
+  is idempotent by content — the same channel value, the same `save=` blob, the same clock — so a
+  repeat is safe; a retried `save=` that had actually landed costs one extra flash write, not a wrong
+  configuration.
+- **`CONFIG_TIMEOUT = 12 s`** for `read=config` and `save=`; short commands keep the 5 s budget.
+- **Error messages that say something.** Timeouts read `timed out after 12s`; exception classes that
+  stringify to `""` (`ServerDisconnectedError` among them) are named.
+- **Per-fixture isolation.** `_apply_each` runs the action against every fixture, collects failures
+  and raises one error at the end naming the hosts that failed and the tally. `DEVICE_SPACING = 1.0 s`
+  between fixtures — three back-to-back configuration writes over one 2.4 GHz radio is the pattern
+  behind both the timeouts and the burst reboot.
+- **A failed pre-save read no longer aborts the save.** `_save` falls back to the last good poll. The
+  only fields it supplies are ones the integration does not change (fan thresholds, timers, and
+  whichever of levels/schedule is not being written), at most one poll interval stale. It still
+  refuses if there is no cached config at all.
+- **Live sets are suppressed in schedule mode.** The firmware ignores them while running its stored
+  curve, so `push_channel` / `push_all` update the model and send nothing — 24 pointless requests
+  removed from every master move and from `reef_lights_schedule_off`. `button.*_push_levels_to_light`
+  now says so instead of looking like it worked.
+- **`binary_sensor.*_stored_config_differs`** (diagnostic, device class `problem`) — §7 option 2 from
+  the note. On when the fixture's stored levels disagree with HA's believed effective levels by more
+  than 2 points, in manual mode. Attributes carry `believed_pct`, `stored_pct`, `differing_channels`,
+  `worst_gap_pct`. It reads `unknown` in schedule mode, where HA's live model does not apply.
+  **It will come on the moment a master moves in manual mode — that is the finding, not a false
+  positive.** A live set never reaches flash, so the fixture will revert at its next re-apply.
+- **`tests/`** — 39 assertions, no pytest, no network, no Home Assistant. `tests/stubs/` holds just
+  enough of `homeassistant` and `voluptuous` to import the modules; `fake_aiohttp.py` replays scripted
+  outcomes so the stalled read and the empty-message disconnect reproduce deterministically. Run with
+  `python3 tests/run.py`.
+
+### 13.4 What this does *not* fix
+
+§7 option 1 — making a manual master persist by routing it through `save=` — is still open, and is
+still the user-visible bug in the note. Deliberately deferred: it would put a debounced flash write
+on top of a write path that was, until v0.2.3, losing whole requests. Fix the transport, watch the
+new mismatch sensor for a day, then decide. Hardware test C (does `set_manual` with levels survive
+the re-apply timer and a reboot?) is what gates it.
+
+Also unchanged: the re-apply interval is still unmeasured (test A), and `preview=` is still untested
+(test B) — it would make a master change one request instead of eight, which matters more now that
+the burst pattern has been implicated twice.
+
+### 13.5 Dashboard and wording
+
+`homeassistant/reef_lights_2026-09-04.yaml` carries the HA-side blocks: `continue_on_error` on the
+photoperiod's save, masters set to peak on schedule→on (free in v0.2.3, since it sends nothing on the
+wire — do **not** backport it, it would have been 24 inert writes), native `visibility:` so the peak
+slider shows only in schedule mode and the masters only in manual, and a mismatch card that appears
+only when something is wrong.
+
+And retire "freeze": `input_boolean.reef_lights_schedule` off is **manual, saved dark**.
+`automation.reef_lights_schedule_off` has parked the fixtures dark since it was written; the
+"freeze" language predates it.

@@ -54,6 +54,11 @@
         "name": "Thermal cutoff"
       }
     },
+    "binary_sensor": {
+      "stored_mismatch": {
+        "name": "Stored config differs"
+      }
+    },
     "button": {
       "push_levels": {
         "name": "Push levels to light"

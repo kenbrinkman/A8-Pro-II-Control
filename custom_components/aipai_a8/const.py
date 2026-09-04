@@ -6,9 +6,31 @@ DOMAIN = "aipai_a8"
 MANUFACTURER = "AIPAI (Jinan Hainei Wushuang Technology)"
 
 DEFAULT_SCAN_INTERVAL = 60  # seconds between read=config polls
-REQUEST_TIMEOUT = 5  # seconds
+REQUEST_TIMEOUT = 5  # seconds, for the short commands (live sets, clock=)
+# read=config and save= carry the whole configuration -- a 29-field string in,
+# ~1.5 kB out -- and the firmware's single-threaded HTTP server takes visibly
+# longer over them than over a live set. Timing those out at 5 s is what made a
+# schedule write fail on a healthy fixture (04 Sep 2026); give them their own,
+# longer budget.
+CONFIG_TIMEOUT = 12  # seconds, for read=config and save=
+# Every command in this protocol is idempotent by content -- setting a channel
+# to the value it already holds, re-saving the same blob, re-sending the clock
+# -- so a failed request can simply be repeated. One retry converts the common
+# single-request stall into a non-event.
+RETRY_ATTEMPTS = 2  # total attempts per request, including the first
+RETRY_BACKOFF = 0.8  # seconds to wait before the retry
+# Seconds between fixtures inside one multi-device service call. These are
+# cheap 2.4 GHz modules on a shared radio; back-to-back configuration writes
+# across three of them is the pattern that has produced both timeouts and the
+# burst reboot.
+DEVICE_SPACING = 1.0
 WRITE_SPACING = 0.15  # seconds between consecutive channel commands to one fixture
 RAW_MAX = 1023  # live channel command is 10-bit
+
+# How far the fixture's stored levels may sit from what Home Assistant believes
+# it is sending before that counts as a disagreement. Stored levels are whole
+# percent and HA's effective value is rounded, so allow a point of slack.
+MISMATCH_TOLERANCE_PCT = 2
 
 # Sanity bounds for a read=config reply. A 6-channel fixture answers with 25
 # fields, an 8-channel one with 29; anything shorter is a truncated/transient
