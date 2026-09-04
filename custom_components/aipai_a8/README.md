@@ -14,12 +14,34 @@ One **device** per fixture, added in the UI by IP address:
 | `sensor.<name>_temperature` | Heatsink temperature, polled every 60 s |
 | `sensor.<name>_mode` | `manual` / `schedule` — which one the fixture is running (see services below) |
 | `sensor.<name>_device_clock`, `_device_timezone` | Diagnostic — the fixture's own clock (factory timezone is UTC+8) |
-| `sensor.<name>_fan_on` / `_fan_off` / `_thermal_cutoff` | Diagnostic, disabled by default |
+| `sensor.<name>_fan_on` / `_fan_off` / `_thermal_cutoff` | Diagnostic, disabled by default — the fixture's stored fan configuration, not measurements. The same three values ride on `sensor.<name>_temperature` as the attributes `fan_on` / `fan_off` / `thermal_cutoff`, so an alert can judge the reading without enabling them |
 | `button.<name>_push_levels_to_light` | Resend every channel's level — use after the fixture lost power |
 | `button.<name>_sync_clock` | Set the fixture clock from HA |
 
 Serial number and model appear on the device card. Factory reset, firmware update and reboot are
 deliberately **not** exposed; they can brick a fixture.
+
+### Fan thresholds and the temperature sensor
+
+`sensor.<name>_temperature` carries the fixture's own fan configuration as attributes:
+
+| Attribute | Typical | Meaning |
+|---|---|---|
+| `fan_on` | 65 °C | heatsink temperature at which the fixture starts its fan |
+| `fan_off` | 50 °C | hysteresis — the fan stops again below this |
+| `thermal_cutoff` | 75 °C | the fixture throttles to protect itself (firmware hard limit is 84 °C) |
+| `threshold_unit` | `°C` / `°F` | the unit the three above are published in |
+
+They are published in **this sensor's display unit**, not always Celsius, so they compare
+directly against the state — on an imperial Home Assistant all four read °F. The fixture
+stores them in Celsius; `save=` passes whatever the fixture already has through unchanged
+(the vendor app, by contrast, overwrites them with 35/30/80 on every save).
+
+These are configuration, not measurements: they do not move on their own, which is why the
+three matching sensors stay disabled by default. Use them to give the heatsink reading a
+scale — a fixture sitting at or above `fan_on` means a failed fan, blocked airflow, or a bad
+mounting spot.
+
 
 ## Install
 

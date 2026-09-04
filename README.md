@@ -281,6 +281,15 @@ temperature/mode/clock sensors, a "push levels" button and — since v0.2.0 — 
 repository. Verified on HA 2026.9 against the fixture above. See its
 [README](custom_components/aipai_a8/README.md).
 
+*v0.2.2* — the fixture's fan thresholds (`read=config[2..4]`) now ride on the temperature sensor
+as the attributes `fan_on` / `fan_off` / `thermal_cutoff`, published in that sensor's display unit,
+so an automation can judge a heatsink reading without enabling three sensors that hold constants.
+Also: the device name now carries the serial (`A8 Pro 3156988`). With `has_entity_name`, the device
+name seeds every entity_id, and `pretty_model()` returns the same `A8 Pro` for every A8PRO6 — so a
+second fixture used to collide into `_2` and a third into `_3`, **in registration order rather than
+light order**. Existing installs keep the entity_ids they already have; renaming the device offers
+to fix them.
+
 **[`homeassistant/a8_lights.yaml`](homeassistant/a8_lights.yaml) — a YAML package.** The same control as
 loose `rest_command` / template entities, no device object. Kept as a reference and fallback; see
 [`homeassistant/README.md`](homeassistant/README.md).
