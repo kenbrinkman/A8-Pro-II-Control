@@ -6,3 +6,6 @@ full/
 __pycache__/
 *.pyc
 .DS_Store
+
+# The redaction rules name every withheld string — they live outside this repo.
+redaction-rules.json
