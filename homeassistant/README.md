@@ -39,7 +39,7 @@ Channel order and colours (A8-PRO): `w` White · `b` Blue · `r` Red · `g` Gree
    ```
    (If a `homeassistant:` key already exists, add the `packages:` line under it.)
 3. **Create `packages/a8_lights.yaml`** next to `configuration.yaml` and paste in the contents of
-   [`a8_lights.yaml`](a8_lights.yaml). Change `192.168.1.208` to your light's IP — it appears in the
+   [`a8_lights.yaml`](a8_lights.yaml). Change `192.168.1.73` to your light's IP — it appears in the
    `rest:` resource line and in every `ip:` argument.
 4. **Developer Tools → YAML → Check configuration**, then **Restart**.
 5. Settings → Devices & services → Entities, search `A8 Light 3`. Drag a brightness slider; the light
@@ -48,7 +48,7 @@ Channel order and colours (A8-PRO): `w` White · `b` Blue · `r` Red · `g` Gree
 ## Adding more fixtures
 
 The file is written for one light called "3". For each additional light, copy every block that contains
-`light3` / `192.168.1.208` and change the number and IP:
+`light3` / `192.168.1.73` and change the number and IP:
 
 - the 8 `input_number` entries
 - the `rest:` resource block (sensors)
@@ -83,7 +83,7 @@ automation:
     actions:
       - action: rest_command.a8_set_all
         data:
-          ip: "192.168.1.208"
+          ip: "192.168.1.73"
           w:  "{{ states('input_number.a8_light3_w') }}"
           b:  "{{ states('input_number.a8_light3_b') }}"
           r:  "{{ states('input_number.a8_light3_r') }}"
@@ -127,7 +127,7 @@ automation:
     actions:
       - action: rest_command.a8_set_all
         data:
-          ip: "192.168.1.208"
+          ip: "192.168.1.73"
           w:  "{{ (40 * f) | round }}"
           b:  "{{ (90 * f) | round }}"
           r:  "{{ (10 * f) | round }}"
@@ -150,6 +150,6 @@ LIGHTS = [("1","192.168.1.201"), ("2","192.168.1.202")]   # edit
 src = open("homeassistant/a8_lights.yaml").read()
 src = src[src.index("input_number:"):]        # skip the shared rest_command block
 for n, ip in LIGHTS:
-    print(src.replace("192.168.1.208", ip).replace("light3", f"light{n}")
+    print(src.replace("192.168.1.73", ip).replace("light3", f"light{n}")
              .replace("Light 3", f"Light {n}"))
 ```

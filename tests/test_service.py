@@ -36,16 +36,16 @@ class FakeCo:
 
 async def main():
     # The 04 Sep shape: light 1 fails, lights 2 and 3 must still be written.
-    cos = [FakeCo("192.168.1.155", ok=False), FakeCo("192.168.1.165"), FakeCo("192.168.1.208")]
+    cos = [FakeCo("192.168.1.71", ok=False), FakeCo("192.168.1.72"), FakeCo("192.168.1.73")]
     try:
         await _apply_each(cos, lambda c: c.act(), "set_schedule")
         check("a failure still raises", False)
     except HomeAssistantError as e:
         check("a failure still raises", True)
         check("lights after the failure were written", cos[1].ran and cos[2].ran)
-        check("error names the failing host", "192.168.1.155" in str(e))
+        check("error names the failing host", "192.168.1.71" in str(e))
         check("error reports the tally", "1 of 3" in str(e))
-        check("error does not name the healthy hosts", "192.168.1.208" not in str(e))
+        check("error does not name the healthy hosts", "192.168.1.73" not in str(e))
 
     # All healthy: no raise, all written.
     cos = [FakeCo("a"), FakeCo("b"), FakeCo("c")]
@@ -65,14 +65,14 @@ async def main():
     # ---- coordinator: save survives a stalled pre-save read -------------
     CONFIG = "|".join(["on", "0", "65", "50", "75"] + ["0"]*8
                       + [",".join(["0"]*24)]*8
-                      + ["28.5", "18,44", "0", "0", "3156988", "0", "-4", "A8PRO6"])
+                      + ["28.5", "18,44", "0", "0", "1234567", "0", "-4", "A8PRO6"])
     initial = api.parse_config(CONFIG)
 
     def make(outcomes):
         s = fake_aiohttp.ClientSession(outcomes)
-        c = api.A8Client("192.168.1.155", s)
+        c = api.A8Client("192.168.1.71", s)
         co = A8Coordinator.__new__(A8Coordinator)
-        co.client = c; co.serial = "3156988"; co.channels = 8
+        co.client = c; co.serial = "1234567"; co.channels = 8
         co.model = "A8PRO6"; co.keys = const.CHANNEL_KEYS[:8]
         co.setpoint = {k: initial.levels_pct[i] for i, k in enumerate(co.keys)}
         co.master_pct = 100; co.master_on = True; co.data = initial

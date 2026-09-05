@@ -11,7 +11,7 @@ from .coordinator import A8Coordinator
 
 
 def _device_name(model: str | None, serial: str | None) -> str:
-    """Unique, stable device name: 'A8 Pro 3156988'."""
+    """Unique, stable device name: 'A8 Pro 1234567'."""
     base = pretty_model(model)
     return f"{base} {serial}" if serial else base
 

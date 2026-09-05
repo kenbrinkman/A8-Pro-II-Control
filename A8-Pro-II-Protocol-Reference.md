@@ -2,18 +2,28 @@
 
 *Reverse-engineered from AIPAI Android app v3.1.82.*
 
-> **Redacted public copy.** This document was written for a private build log and is published here
-> with the author's own identifiers removed — fixture serials, LAN addresses, host names and Home
-> Assistant device IDs. The vendor's hardcoded broker credentials and the app's RC4 bundle key are
-> also withheld: both are global to the product rather than secrets of this install, and both are
-> recoverable from the APK with `tools/apicloud_decrypt.py` by the method in §8. Nothing about the
-> protocol itself has been removed. Placeholders read `<like-this>`.
+> **Redacted public copy.** This document is generated from a private master by redaction only —
+> fixture serials, LAN addresses, host names and Home Assistant device IDs are removed, as are three
+> subsections of §13 that are pure repo housekeeping and private links (§13.6, §13.8, §13.9). The
+> vendor's hardcoded broker credentials and the app's RC4 bundle key are also withheld: both are
+> global to the product rather than secrets of this install, and both are recoverable from the APK
+> with `tools/apicloud_decrypt.py` by the method in §0. **Nothing about the protocol itself has been
+> removed.** Placeholders read `<like-this>`.
 
-Status (3 Sep 2026): **Route A confirmed on hardware and running in Home Assistant.**
-The test fixture (A8 Pro II, firmware model `A8PRO6`) answers on port 80 in
-station mode. A custom integration (`aipai_a8`) is installed via HACS and shows as one device,
-"A8 Pro Light 3". See §9 for what was learned on hardware and §10 for the HA integration.
+**Status (5 Sep 2026): Route A confirmed on hardware; three fixtures running under a custom
+Home Assistant integration, `aipai_a8` v0.2.3.** The test fixtures (A8 Pro II, firmware model
+`A8PRO6`) answer on port 80 in station mode. Installed via HACS, one device per fixture.
 Public repo: https://github.com/kenbrinkman/A8-Pro-II-Control
+
+### Document map
+
+| Sections | What they are |
+|---|---|
+| §0–§8 | The protocol itself. Stable; changes only if firmware does. |
+| §9–§12 | Build log, 3 Sep. Historic snapshots — each says what supersedes it. |
+| §13 | The write path (4 Sep, late). Integration v0.2.3 + the dashboard save button. |
+| §14 | Master vs Peak vs Schedule (4 Sep, **earlier** — §13 is its sequel). Out of chronological order so §13's published numbering stays put. |
+| §15 | Consolidated current state and open items. **Supersedes every earlier "Still open" / "Next" list.** |
 
 ---
 
@@ -28,6 +38,7 @@ Public repo: https://github.com/kenbrinkman/A8-Pro-II-Control
 | Command grammar | Identical over both transports — a `key=value` query string |
 | Channels | 8 on A8-PRO (`w b r g b2 p uv wm`). Live set 0–1023; config/schedule values 0–100 % |
 | Per-channel HA control feasible? | **Done** — `custom_components/aipai_a8`, one device per fixture (§10) |
+| What actually persists? | **Only `save=`.** Live `?w=`/`?b2=` sets are a preview the firmware discards at its next re-apply (§11, §14) |
 
 The app is an APICloud/uzmap hybrid — all logic is HTML/JS, RC4-encrypted inside the APK with a key
 statically recoverable from `lib/*/libsec.so` (the key for a given build is not reproduced here).
@@ -87,12 +98,14 @@ b2=1023      # deep blue to 100 %
 uv=0         # UV off
 ```
 
+⚠ Live sets are **not durable** — see §11 and §14.2. They are a preview until a `save=` follows.
+
 ### Other commands found in the app
 
 | Command | Effect |
 |---|---|
 | `sta=getip` | Identity: `<ip>,<serial>,<flag>` — the app's own liveness check, works without an account |
-| `preview=<hour>&w=<pct>&b=<pct>…` | Drive all channels at once, values 0–100 (untested on hardware) |
+| `preview=<hour>&w=<pct>&b=<pct>…` | Drive all channels at once, values 0–100 (untested on hardware — §15) |
 | `sta=aplist` / `sta=apconnect&ssid=&pwd=` | Wi-Fi provisioning, served at `192.168.4.1` in AP mode |
 | `read=config` | Dump full configuration (see §3) |
 | `save=<blob>` | Write full configuration (see §4) |
@@ -102,6 +115,8 @@ uv=0         # UV off
 | `node=restart` | Reboot the device |
 | `mculed=on` / `mculed=off` | Status LED on the fixture |
 | `turnoffset=0` / `turnoffset=1` | Fade behaviour toggle |
+
+The integration never sends `reset=`, `version=` or `node=restart`.
 
 ---
 
@@ -161,9 +176,10 @@ on x <mode> x 35 x 30 x 80 x <roadVal ×n> x <roadData ×n> x <openValue> x <clo
 
 ## 5. Three routes to Home Assistant
 
-Listed best-first. They are not mutually exclusive — route A is the goal, route C is the guaranteed fallback.
+Listed best-first. **Route A won** (§9); B and C are kept for the record and for anyone whose
+firmware has closed port 80.
 
-### Route A — local HTTP (no cloud at all) ★ preferred
+### Route A — local HTTP (no cloud at all) ★ chosen
 
 ```
 GET http://<light-ip>/?w=512
@@ -171,14 +187,13 @@ GET http://<light-ip>/?read=config
 ```
 
 The app still computes `serverUrl = "http://" + device.ip + "/"` unconditionally, and only *chooses*
-MQTT when `device.ver.substr(0,4) > 2023`. The HTTP server is very likely still present in current
-firmware — the app simply stopped calling it. **This is the first thing to test (§6.1).**
+MQTT when `device.ver.substr(0,4) > 2023`. The HTTP server is still present in current firmware —
+the app simply stopped calling it.
 
-If it answers: HA integration is a handful of `rest_command:` entries plus a `rest:` sensor, or a
-small `light` platform. Fully local, no cloud, no vendor account, no broker. Matches the
-build's "no proprietary apps or cloud" rule outright.
+Fully local, no cloud, no vendor account, no broker. Matches the build's "no proprietary apps or
+cloud" rule outright.
 
-### Route B — DNS redirect to local Mosquitto ★★ best if A fails
+### Route B — DNS redirect to local Mosquitto ★★ fallback if A ever closes
 
 The lights connect *out* to `mqtt.doseen.com`, so a broker already running on the LAN can stand in
 for it.
@@ -197,10 +212,10 @@ no vendor cloud, and it keeps the schedule/OTA machinery intact.
 > pins a certificate this route fails — but given the app uses unencrypted `ws://`, certificate
 > pinning is unlikely.
 
-### Route C — vendor cloud broker ✓ guaranteed, but cloud-dependent
+### Route C — vendor cloud broker ✓ works, but cloud-dependent
 
-Connect HA's MQTT client to `ws://mqtt.doseen.com:8083/mqtt` with the vendor's global credentials,
-publish to `light/<SN>/mob`:
+Connect HA's MQTT client to `ws://mqtt.doseen.com:8083/mqtt` with the vendor's global credentials, publish
+to `light/<SN>/mob`:
 
 ```json
 {"type": "w512", "msg": "w=512"}
@@ -209,8 +224,8 @@ publish to `light/<SN>/mob`:
 `type` is the msg with the `=` stripped (`order.replace("=","")`) — odd, but that is what the
 firmware expects. Subscribe `light/<SN>/dev` for replies.
 
-Works today, needs no hardware access — but it depends on a Chinese cloud service and violates the
-project's no-cloud rule. Use it to *prove the command grammar* while working out A or B.
+Depends on a Chinese cloud service and violates the project's no-cloud rule. Useful only to *prove
+the command grammar* without hardware access.
 
 ### Topic reference
 
@@ -224,7 +239,10 @@ project's no-cloud rule. Use it to *prove the command grammar* while working out
 
 ---
 
-## 6. Hardware test plan
+## 6. Hardware test plan — protocol discovery
+
+*Historic: all four steps are done. For the tests that are still open — the ones about firmware
+**behaviour** rather than protocol — see §14.6 and §15.*
 
 ### 6.1 Does the local HTTP server still exist? — do this first
 
@@ -263,6 +281,8 @@ tcpdump -n -i <iface> host <light-ip> and not port 22
 
 Looking for: the DNS query for `mqtt.doseen.com`, and the destination port that follows
 (1883 plain / 8883 TLS / 8083 WS). That single fact decides whether Route B is a one-evening job.
+**Moot as long as Route A holds, and moot in practice since 4 Sep — the fixtures are firewalled off
+the internet (§7).**
 
 ### 6.4 Serial numbers
 
@@ -285,9 +305,10 @@ treated on the network.
    Serial numbers appear to be sequential.
 4. **Remote OTA is exposed on the same unauthenticated channel** (`version=<file>`).
 
-**Recommendation:** put the three fixtures on the IoT VLAN and firewall them from the internet
-regardless of which control route wins. Route A or Route B both make outbound internet access
-unnecessary. Given item 4, this is worth doing whether or not the HA integration ever happens.
+**Recommendation — ✅ done 4 Sep 2026.** The three fixtures are firewalled off the internet
+(pf block, alias `A8_Lights`; the already-established MQTT sessions had to be killed with
+`pfctl -k` before the block took effect). Route A needs no outbound access at all. Given item 4,
+this was worth doing independently of the HA integration.
 
 ---
 
@@ -300,10 +321,13 @@ unnecessary. Given item 4, this is worth doing whether or not the HA integration
 | `dec/assets/widget/` | 136 decrypted app files — the readable source |
 | `dec/assets/widget/script/public.js` | `SetDevOrder`, `DevicesSave`, MQTT connect — the core |
 | `dec/assets/widget/ctrl-light.html` | Light UI: `deviceSyns` config parser, `mqttOrder`, channel map |
-| `a8_probe.py` | LAN probe — `sta=getip` + `read=config`, decodes all fields, `--set` / `--raw`, refuses OTA/reset/save |
-| `custom_components/aipai_a8/` | HA integration (§10) |
-| `homeassistant/a8_lights.yaml` | YAML-package alternative (fallback) |
+| `tools/a8_probe.py` | LAN probe — `sta=getip` + `read=config`, decodes all fields, `--set` / `--raw` / `--save-*` / `--dry-run`; refuses OTA/reset |
+| `custom_components/aipai_a8/` | HA integration (§10, §11, §13.3) |
+| `tests/run.py` | 39 assertions, no pytest, no network, no HA (§13.3) |
+| `homeassistant/a8_lights.yaml` | YAML-package alternative (fallback, **not** installed — §10) |
+| `homeassistant/reef_lights_2026-09-04.yaml` | The HA-side blocks from §13.5 |
 | `REVIEW-2026-09-03.md` | Review of the original write-up — the corrections that went into the README (kept privately) |
+
 
 Key source lines: `public.js:130` (broker + credentials), `public.js:442` (`SetDevOrder`, transport
 switch), `public.js:538` (`DevicesSave`), `ctrl-light.html:410` (`serverUrl`), `:429` (`roadName`),
@@ -312,6 +336,8 @@ switch), `public.js:538` (`DevicesSave`), `ctrl-light.html:410` (`serverUrl`), `
 ---
 
 ## 9. Hardware confirmation (3 Sep 2026)
+
+*Historic snapshot. Superseded in part by §11, §13 and §15.*
 
 One fixture factory-reset, joined to the 2.4 GHz LAN, probed with `tools/a8_probe.py`:
 
@@ -330,75 +356,74 @@ temp=43.19°C  clock=7,14  timer on/off=0/0  tz=UTC8  fan on/off/cutoff=65/50/75
 | Read-back | `read=config` shows **stored** levels (50 after `b2=1023`). HA must own live state. |
 | Factory defaults | tz UTC+8 (schedule would run on Beijing time), fan 65/50/75 (app overwrites with 35/30/80 on save), manual mode, all channels 50 %. |
 | Heatsink temp | 43 → 50 °C over ~2 h at ≥50 %, no water under it. Fan on at 65. |
-| Persistence | Live sets hold. **But a reboot restores stored levels** (50 % all channels, switch on). The fixture rebooted right after two presets fired 48 commands in 3 s → came on by itself at night. Fix: integration v0.1.1 re-pushes on reconnect + paces writes 150 ms; photoperiod re-pushes every 5 min while on. |
-| Lights 1 & 2 | Not yet reset; add later by IP. |
+| Persistence | Live sets *appear* to hold, and a reboot restores stored levels. Light 3 rebooted at 21:13 on 3 Sep right after two presets fired 48 commands in 3 s → came on by itself at night. ⚠ **The "live sets hold" half of this was wrong** — see §11 and §14.2: the firmware re-applies its stored config on a timer, so they decay even without a reboot. |
+| Lights 1 & 2 | Added later, by IP. |
 
 Other LAN hosts may answer on port 80 with non-config pages — the probe only
 counts a `|`-delimited reply.
 
 ---
 
-## 10. Home Assistant — installed and working
+## 10. Home Assistant — the first install (3 Sep 2026)
 
-**`custom_components/aipai_a8/`** (in the repo, HACS custom repository). Installed on HA 2026.9.0,
-added by IP, first try — one device per fixture.
+*Historic snapshot of v0.1.x. Superseded by §11 (v0.2.1), §13.3 (v0.2.3) and §15.*
+
+**`custom_components/aipai_a8/`** (in the repo, HACS custom repository). Installed on HA 2026.9.0, added by IP,
+first try — one device per fixture.
 
 | Entity | Notes |
 |---|---|
 | `light.*_master` | Whole-fixture on/off + proportional dimmer. `effective = setpoint × master %`; sends one `?ch=` per channel. |
 | `light.*_white … _warm_white` | 8 channel dimmers. Assumed state, restore on restart, seeded from stored config on first add (50 % each). |
 | `sensor.*_temperature` | From `read=config` every 60 s; displays °F because HA is imperial (121.9 °F = 49.9 °C). |
-| `sensor.*_mode` | `manual` / `schedule`. Keep manual. |
+| `sensor.*_mode` | `manual` / `schedule`. |
 | `sensor.*_device_clock`, `_device_timezone`, fan thresholds | Diagnostic. |
-| `button.*_push_levels_to_light` | Resend every channel — after a power loss. |
+| `button.*_push_levels_to_light` | Resend every channel — after a power loss. Inert in schedule mode since v0.2.3 (§13.3). |
 | `button.*_sync_clock` | `clock=<epoch>`. |
 
 Design notes: `api.py` has no HA imports (unit-tested against the real 29-field reply); coordinator
 tolerates a transient `A+` to a poll by keeping last data instead of going unavailable; never sends
-`reset=`, `version=`, `node=restart`. (`save=` was added in v0.2.0 — see §11, which supersedes the
-v0.1.x parts of §9 and §10.)
+`reset=`, `version=`, `node=restart`.
 
 The earlier YAML package (`homeassistant/a8_lights.yaml`, `rest_command` + template lights) also works
-and is kept in the repo as a fallback; it should be removed from `/config/packages/` now that the
-integration is in so two controllers don't fight over one light. Lesson from that install: the legacy
+and is kept in the repo as a fallback; it was removed from `/config/packages/` once the integration
+went in, so two controllers do not fight over one light. Lesson from that install: the legacy
 `light: - platform: template` form was removed in current HA — template lights must live under
 `template:`.
 
-All three fixtures added, each by its own LAN address (entity prefix
-`<area>_a8_pro_light_N_`).
+All three fixtures added, each by its own LAN address (entity prefix `<area>_a8_pro_light_N_`).
 
 ### Reef Command → Lighting tab (`/reef-command/lighting`)
 
 | Section | Contents |
 |---|---|
-| Day Cycle | `input_boolean.reef_lights_schedule`, `input_number.reef_lights_peak_intensity` (70), `input_datetime.reef_lights_{sunrise,full_day,sunset,night}` (now 11:45/15:45/20:45/00:45), template sensors `reef_lights_{phase,next_change,day_length,full_intensity_hours}`, 24 h intensity graph (3 masters) |
+| Day Cycle | `input_boolean.reef_lights_schedule`, `input_number.reef_lights_peak_intensity`, `input_datetime.reef_lights_{sunrise,full_day,sunset,night}`, template sensors `reef_lights_{phase,next_change,day_length,full_intensity_hours}`, 24 h intensity graph |
 | Spectrum Presets | Tiles → `script.reef_spectrum_apply` with channel ratios; `input_select.reef_spectrum_preset` records the active one |
 | Light 1 / 2 / 3 | Master + 8 colour-matched inline sliders + Push button; temp/mode badges. Compact rows for portrait iPad |
 | Spectrum — 24 h | Three history-graphs (one per light) of `sensor.reef_light_N_<channel>` template helpers (effective %) |
 
-### Automation `automation.reef_lights_photoperiod`
+### Automation `automation.reef_lights_photoperiod` (v0.1.x form — superseded)
 Every 5 min + on any Day Cycle helper change, if schedule on: master target = linear ramp
 sunrise→full (0→peak), flat peak full→sunset, linear sunset→night (peak→0), off outside. Drives the
-three masters only; channel ratios are the spectrum. Schedule off = freeze (no off branch).
+three masters only; channel ratios are the spectrum.
 
 ### Script `script.reef_spectrum_apply` (fields preset, w b r g b2 p uv wm)
-Sets channel set points on all three lights. Presets (app's A8 values ×1.25, normalised to 100):
+Sets channel set points on all three lights. **Original preset list, superseded by §12:**
 AB+ 24/100/24/24/100/100/100/24 · PHX14 24/100/30/18/100/100/100/24 · LPS 15/100/25/20/100/100/100/15 ·
 Color 55/100/40/23/100/100/100/55 · Full Spectrum all 100 · Moonlight 0/10/0/0/30/10/0/0.
 
 Gotcha: the HA dashboard editor saves its whole stale copy on exit — close the editor before agent
 writes, or they get reverted.
 
-**Next:** verify persistence across a full day (does a live set drift back between 5-min ticks);
-"Custom" detection on manual slider moves; finer ramp (`/1`) if 2 % steps look coarse.
+> The "Next:" list that stood here (verify persistence across a day; Custom detection; finer ramp)
+> is resolved — persistence turned out to be the §11/§14 re-apply finding, Custom detection shipped
+> in §12, and the ramp question died with the 5-minute polling. Live open items are in §15 only.
 
 ---
 
----
+## 11. `save=` verified; the light runs its own photoperiod (3 Sep 2026, late)
 
-## 11. Current state (3 Sep 2026, late) — supersedes the v0.1.x parts of §9–§10
-
-### `save=` is verified; the light runs its own photoperiod
+*Supersedes the v0.1.x parts of §9–§10. Integration state here is v0.2.1; see §13.3 for v0.2.3.*
 
 Blob format exactly as §4. Reply `true`. Fan thresholds pass through unchanged. Mode 1 with tz `-4`
 works, and **the timezone only takes effect on the next `clock=`**, so the integration always sends
@@ -407,7 +432,8 @@ more than 10 minutes with no HA nagging — the crutch is gone.
 
 The finding that forced this: **live sets are temporary.** The firmware re-applies its stored config
 every few minutes, so anything sent with `?w=`/`?b2=` is a preview. Only `save=` persists. The
-one-minute "hold levels" automation that papered over this has been deleted.
+one-minute "hold levels" automation that papered over this has been deleted. The consequences for the
+master slider are worked out in §14.
 
 ### Integration v0.2.1
 
@@ -425,33 +451,23 @@ one-minute "hold levels" automation that papered over this has been deleted.
   block), discards a heatsink reading outside 1–120 °C and holds the previous one, and ignores a reply
   whose serial does not match the fixture. Last good data stands until the next poll.
 
-### Home Assistant objects (current)
+### Home Assistant objects introduced here
 
-- Day cycle helpers: schedule toggle (**off** — tank still in assembly), peak 70,
-  sunrise 11:45 · full day 15:45 · sunset 20:45 · night 00:45 (13 h photoperiod, 5 h at peak).
+- Day cycle helpers: schedule toggle, peak intensity, sunrise / full day / sunset / night.
 - `script.reef_lights_save_schedule` — calls `set_schedule` on all three devices from those helpers.
 - `automation.reef_lights_photoperiod` — no more 5-minute polling; re-saves on schedule→on, on any
   helper change, on HA start, and daily at 03:30 (DST).
 - `automation.reef_lights_schedule_off` — masters off + `set_manual off`.
 - `automation.reef_spectrum_detect_custom` — sets `input_select.reef_spectrum_preset` to Custom when a
-  channel set point is changed by hand. Fires only when the change has a user and no parent context,
-  so `script.reef_spectrum_apply` and restored-state-on-restart do not trip it. Verified both ways.
-- Lighting tab: the Day Cycle graph is now an apexcharts card rendering the **saved curve** — a smooth
-  "Planned (HA)" area plus the 24 hourly points the firmware actually stores, which is what shows how
-  much the hourly quantisation rounds off a 11:45 sunrise. The old history graph of HA's master
-  intensity was meaningless in schedule mode, since HA never sees the light's own ramp.
+  channel set point is changed by hand. (The context test described here was wrong; see §12.)
+- Lighting tab: the Day Cycle graph is an apexcharts card rendering the **saved curve** — a smooth
+  "Planned (HA)" area plus the 24 hourly points the firmware actually stores, which shows how much the
+  hourly quantisation rounds off an 11:45 sunrise. The old history graph of HA's master intensity was
+  meaningless in schedule mode, since HA never sees the light's own ramp.
 
-### Physical state
 
-All three lights **manual, all channels 0, tz −4, clock local** — parked dark while the tank is
-plumbed. Masters off in HA, schedule toggle off, spectrum AB+ sitting in the set points.
-
-### Still open
-
-- DHCP reservations for the three fixtures — the integration addresses them by IP.
-- Test `preview=` (would make a master change one call instead of eight).
-- The Lighting tab's "Spectrum — last 24 h" history graphs are still HA's model; in schedule mode they
-  only reflect what HA sent, not what the light ran.
+> The helper values and "physical state" recorded here (peak 70, spectrum AB+) are a 3 Sep snapshot
+> and no longer hold. Current values are in §15.1 only.
 
 ---
 
@@ -461,18 +477,19 @@ plumbed. Masters off in HA, schedule toggle off, spectrum AB+ sitting in the set
 
 | Object | Role |
 |---|---|
-| `input_select.reef_spectrum_preset` | The active preset name (7 options incl. Custom) |
+| `input_select.reef_spectrum_preset` | The active preset name — **4 options: Default, 100% White, Moonlight, Custom** |
+| `input_text.reef_spectrum_default` | The Default ratios, editable at runtime |
 | `input_text.reef_spectrum_custom` | Last hand-tuned spectrum, 8 comma-separated percentages |
 | `input_boolean.reef_spectrum_applying` | On while a preset script writes set points; suppresses the detector |
 | `script.reef_spectrum_apply` | Writes the 8 ratios to all three lights, records the preset, re-saves the schedule if it is on. `continue_on_error` on the light calls so one unreachable fixture does not abort the other two |
+| `script.reef_spectrum_apply_default` / `_save_default` | Apply the Default helper / write Light 1's current set points into it |
 | `script.reef_spectrum_recall_custom` | Re-applies the stored custom string; notifies if none saved |
-| `automation.reef_spectrum_detect_custom` | Hand edit -> snapshot that light's 8 set points + flag Custom |
+| `automation.reef_spectrum_detect_custom` | Hand edit → snapshot that light's 8 set points + flag Custom |
 | `automation.reef_spectrum_clear_stuck_applying_flag` | Clears the guard flag if it sticks on for 5 min |
 
-Lighting tab: four preset tiles, `columns: 9` of the section's 36-column grid, `rows: 1`, each with a
-card-mod style that draws a border and tint on the tile matching the active preset. Inactive tiles are
-left completely alone - a dimmed/greyed treatment was tried on 3 Sep and rejected for draining the
-colour out of the row.
+Lighting tab: preset tiles on the section's 36-column grid, each with a card-mod style that draws a
+border and tint on the tile matching the active preset. Inactive tiles are left completely alone — a
+dimmed/greyed treatment was tried on 3 Sep and rejected for draining the colour out of the row.
 
 ### Lesson: HA context does not distinguish a script's writes from a user's
 
@@ -489,14 +506,19 @@ watchdog automation so a crashed writer cannot leave the guard stuck on.
 Light 3 dropped out again during this session after several `reef_spectrum_apply` runs in quick
 succession (each 24 paced writes across three fixtures), and returned about two minutes later dark
 and correct from its stored manual/all-zero config. The 150 ms intra-run pacing does not protect
-against stacked runs — leave a minute or two between full preset applies.
+against stacked runs — **leave a minute or two between full preset applies.**
 
-### Preset set as of late 3 Sep (supersedes the ratio lists in sections 10 and 11)
+### The preset set (supersedes the ratio lists in §10)
 
-Four presets, one row: **Default** 25/100/10/20/100/100/90/15 - **100% White** all 100 (the former
-Full Spectrum) - **Moonlight** 0/10/0/0/30/10/0/0 - **Custom** (recalled from
-`input_text.reef_spectrum_custom`). AB+, PHX14, LPS and Color were removed from both the tiles and the
-input_select options. Tiles are `columns: 9` of the 36-column section, `rows: 1`.
+Four presets, one row: **Default** · **100% White** (all 100, the former Full Spectrum) ·
+**Moonlight** `0,10,0,0,30,10,0,0` · **Custom** (recalled from `input_text.reef_spectrum_custom`).
+AB+, PHX14, LPS and Color were removed from both the tiles and the `input_select` options.
+
+⚠ **Default's ratios live in a helper, not in this document.** Verified live 5 Sep 2026,
+`input_text.reef_spectrum_default` = `35,100,10,20,100,100,90,15`, and Light 1's white set point
+reads 35 to match. **`script.reef_spectrum_apply_default` still carries `25,100,10,20,100,100,90,15`
+as its hardcoded fallback** — a stale literal that only shows up if the helper is ever emptied.
+Worth correcting in code; tracked in §15.2.
 
 Adding a preset is three edits: the name into `input_select.reef_spectrum_preset`'s options, a tile
 whose `tap_action` calls `script.reef_spectrum_apply` with the eight ratios in `data`, and a copy of
@@ -505,16 +527,16 @@ the card-mod highlight style with that name substituted.
 Dashboard tab order changed on 3 Sep: the Lighting view is `views[3]`. Locate cards by search rather
 than by a remembered index.
 
-### Editable Default, and the native-types gotcha (late 3 Sep)
+### Editable Default, and the native-types gotcha
 
 Default's ratios moved out of the dashboard tile into `input_text.reef_spectrum_default`, so they can
-be re-saved at runtime: `script.reef_spectrum_apply_default` reads the helper (falling back to
-`25,100,10,20,100,100,90,15`), and `script.reef_spectrum_save_default` writes Light 1's current set
-points into it. The Default tile taps to apply and **holds** to save, behind a confirmation dialog.
-Same shape as Custom — a preset is a helper plus two scripts plus a tile.
+be re-saved at runtime: `script.reef_spectrum_apply_default` reads the helper, and
+`script.reef_spectrum_save_default` writes Light 1's current set points into it. The Default tile taps
+to apply and **holds** to save, behind a confirmation dialog. Same shape as Custom — a preset is a
+helper plus two scripts plus a tile.
 
 **HA gotcha worth remembering:** a `variables:` block renders templates to *native Python types*, so a
-template producing `"25,100,10,..."` comes back as a tuple and `.split(',')` raises
+template producing `"35,100,10,..."` comes back as a tuple and `.split(',')` raises
 `'TupleWrapper' object has no attribute 'split'` — inside an `if` condition that failure is silent and
 the else branch runs. Service-call `data:` fields keep the string. Keep such a value as a list in
 variables and `| join(',')` only where it is consumed.
@@ -525,7 +547,7 @@ The four Day Cycle time tiles also highlight the active phase from `sensor.reef_
 The Default slot is two tiles in one grid position, switched by HA's native per-card `visibility`
 conditions: "Default" when the preset is anything but Custom, "Hold to save as Default" when it is
 Custom. Same tap/hold actions on both. `visibility` is core HA and works on any card in a sections
-view - the cheap way to make a card state-dependent without a templating custom card.
+view — the cheap way to make a card state-dependent without a templating custom card.
 
 ### Two dashboard caveats that will look like bugs
 
@@ -544,14 +566,13 @@ onto ~40 % width and never re-measure. Fixed `rows: 4` plus `width: "100%"`,
 Also: apexcharts-card has no top-level `title:` key (that errors as extraneous). The card heading is
 `header.title`, centred with card-mod on `#header` / `#header__title`; ApexCharts' own
 `title: {text, align}` lives under `apex_config` and draws inside the plot area instead.
-
 ---
 
-## 13. The write path — how a healthy fixture stayed dark (4 Sep 2026)
+## 13. The write path — how a healthy fixture stayed dark (4 Sep 2026, late)
 
 Raised as "the lights are still a little weird", investigated from live HA state and the automation
-traces. It is a *fourth* failure mode, independent of the three in the Master/Peak/Schedule note, and
-it is the one that was actually biting.
+traces. It is a *fourth* failure mode, independent of the three in §14.1, and it is the one that was
+actually biting.
 
 ### 13.1 What happened
 
@@ -575,7 +596,8 @@ wrote all three.
 slower over them than over a live set, so under any concurrent load — a poll landing on one fixture
 while another is being written — the read times out. The give-away in the log is a message ending in
 a bare colon: `asyncio.TimeoutError` stringifies to `""`. Same class of bug as the NaN masking in
-§11.18 and the zeroed-temperature spike in v0.2.1 — the failure was real, the report was useless.
+the build's private master reference (NaN-masking lesson) and the zeroed-temperature spike in v0.2.1 — the failure was real,
+the report was useless.
 
 **One fixture's failure cancelled the others.** `set_schedule` and `set_manual` take a device list,
 and `_svc_*` looped and raised on the first error. Everything after the failing fixture was silently
@@ -607,9 +629,9 @@ photoperiod write, and the only visible symptom is a dark tank with a dashboard 
   curve, so `push_channel` / `push_all` update the model and send nothing — 24 pointless requests
   removed from every master move and from `reef_lights_schedule_off`. `button.*_push_levels_to_light`
   now says so instead of looking like it worked.
-- **`binary_sensor.*_stored_config_differs`** (diagnostic, device class `problem`) — §7 option 2 from
-  the note. On when the fixture's stored levels disagree with HA's believed effective levels by more
-  than 2 points, in manual mode. Attributes carry `believed_pct`, `stored_pct`, `differing_channels`,
+- **`binary_sensor.*_stored_config_differs`** (diagnostic, device class `problem`) — §14.7 option 2.
+  On when the fixture's stored levels disagree with HA's believed effective levels by more than 2
+  points, in manual mode. Attributes carry `mode`, `believed_pct`, `stored_pct`, `differing_channels`,
   `worst_gap_pct`. It reads `unknown` in schedule mode, where HA's live model does not apply.
   **It will come on the moment a master moves in manual mode — that is the finding, not a false
   positive.** A live set never reaches flash, so the fixture will revert at its next re-apply.
@@ -620,15 +642,15 @@ photoperiod write, and the only visible symptom is a dark tank with a dashboard 
 
 ### 13.4 What this does *not* fix
 
-§7 option 1 — making a manual master persist by routing it through `save=` — is still open, and is
-still the user-visible bug in the note. Deliberately deferred: it would put a debounced flash write
-on top of a write path that was, until v0.2.3, losing whole requests. Fix the transport, watch the
-new mismatch sensor for a day, then decide. Hardware test C (does `set_manual` with levels survive
-the re-apply timer and a reboot?) is what gates it.
+§14.7 option 1 — making a manual master persist by routing it through `save=` — is still open, and is
+still the user-visible bug. Deliberately deferred: it would put a debounced flash write on top of a
+write path that was, until v0.2.3, losing whole requests. Fix the transport, watch the new mismatch
+sensor for a day, then decide. §14.6 test C (does `set_manual` with levels survive the re-apply timer
+and a reboot?) is what gates it.
 
-Also unchanged: the re-apply interval is still unmeasured (test A), and `preview=` is still untested
-(test B) — it would make a master change one request instead of eight, which matters more now that
-the burst pattern has been implicated twice.
+Also unchanged: the re-apply interval is still unmeasured (§14.6 test A), and `preview=` is still
+untested (§14.6 test B) — it would make a master change one request instead of eight, which matters
+more now that the burst pattern has been implicated twice.
 
 ### 13.5 Dashboard and wording
 
@@ -641,3 +663,259 @@ only when something is wrong.
 And retire "freeze": `input_boolean.reef_lights_schedule` off is **manual, saved dark**.
 `automation.reef_lights_schedule_off` has parked the fixtures dark since it was written; the
 "freeze" language predates it.
+
+### 13.7 The dashboard now saves, and says whether it worked
+
+*(§13.6, §13.8 and §13.9 of the master are omitted here — repo housekeeping, a git-history
+cleanup, and a private link. No protocol content.)*
+
+The gap v0.2.3 left behind: nothing on the dashboard could make a manual look permanent, and a
+hand-moved colour slider in schedule mode never triggered a re-save. Both needed a service call from
+Developer Tools, which is how a step gets skipped.
+
+**`script.reef_lights_save_to_lights`** — one button, mode-aware, self-verifying.
+
+- Schedule **on** → `script.reef_lights_save_schedule` (rewrites curve + current spectrum)
+- Schedule **off** → `aipai_a8.set_manual` on all three, no levels (stores what HA is showing)
+- Then `delay: 12 s` and a native state condition against the roll-up sensor below, so a save that
+  reached only some of the three is reported rather than assumed. The failure notification names the
+  fixtures still in the wrong state. **This is the check that would have caught §13.1 in one press.**
+- Both service calls carry `continue_on_error: true` so the verification branch always runs.
+
+Two roll-up helpers, both created through the config flow (not YAML), so they stay UI-editable:
+
+| Entity | Type | Reads |
+|---|---|---|
+| `binary_sensor.reef_lights_unsaved` | group of the three `*_stored_config_differs`, any-on | `OK` / `Problem` (device class `problem`) |
+| `binary_sensor.reef_lights_curve_loaded` | template, all three `*_mode` sensors equal `schedule` | `Running` / `Not running` (device class `running`) |
+
+Both needed an explicit `device_class` set through the entity registry — a bare binary sensor renders
+`On`/`Off`, which reads as nonsense on a status tile.
+
+⚠ `reef_lights_unsaved` is `unknown` in schedule mode, because the per-fixture mismatch sensor
+returns None there. That is why the dashboard pairs it with `curve_loaded` by mode rather than
+showing one status everywhere.
+
+#### Lighting tab, Spectrum Presets section (`views[3].sections[1]`)
+
+Final shape after a compaction pass — **one heading, one row of tiles**:
+
+- Heading `Spectrum Presets`, badges: active preset, plus a mode-switched status badge
+  (`unsaved` when schedule off, `curve_loaded` when on)
+- Five tiles filling the 36-column grid: four presets at `columns: 7` + the Save tile at `columns: 8`
+- The Save tile is a `visibility` pair on `input_boolean.reef_lights_schedule` — *Save curve to
+  lights* / *Save levels to lights* — with a per-mode confirmation dialog, and a card-mod amber
+  border while a save is outstanding
+
+The first version used a `Save to the Lights` subtitle heading and two 18-column status tiles on
+their own row. That was three rows for what one row now carries: **the status belongs on the heading
+as a badge, not as a tile.** Worth remembering for the next section that wants a state readout.
+
+Edits were made with `ha_config_set_dashboard(python_transform=...)` addressing
+`config['views'][3]['sections'][1]`, which is additive and surgical — no full-config replacement, and
+the dashboard editor was closed throughout (§12's stale-copy gotcha).
+
+⚠ The config hash moved between two of those writes without anyone editing on purpose — same
+unidentified writer noted against the repo. Always re-fetch the hash immediately before a transform.
+
+
+---
+
+## 14. Master vs Peak vs Schedule: how they actually interact (4 Sep 2026, earlier)
+
+*Written from live HA state and the integration/automation configs, after "we need to check Master
+switch behavior — not what I expected". This section is the finding; §13 is the sequel that fixed the
+transport underneath it. Numbered §14 rather than §13 so the already-published §13 numbering does not
+move. Background lives in the build's private notes.*
+
+### 14.1 The three findings
+
+**1. HA's master slider is a belief, not a readback, and in manual mode the fixture silently walks
+away from it within about 5–10 minutes.** Turn a master on, the light comes on, then goes dark by
+itself while HA still reads 100 %. That is the firmware re-applying its **stored** config — and the
+stored config was 0 %, because the last `set_manual off` saved it dark.
+
+**2. Peak intensity and the master never both apply.** Peak governs schedule mode only; the master
+governs manual mode only. Nothing on the dashboard said so — fixed in §13.5 with native `visibility:`.
+
+**3. The schedule toggle is asymmetric.** Off → masters off *and* fixture saved dark. On → the curve
+is written, but the masters are left wherever they were. So off→on left HA showing masters off while
+the tank was lit — fixed in §13.5 by setting the masters to peak on schedule→on.
+
+§13 is a **fourth**, independent failure mode: the write itself could be lost.
+
+### 14.2 The three controls, precisely
+
+| Control | Entity | What it governs | When it does nothing |
+|---|---|---|---|
+| **Master** | `light.<area>_a8_pro_light_{1,2,3}_master` | Live multiplier — `effective = setpoint × master %`, written as per-channel 0–1023 **live** sets. `assumed_state: true`, attributes `master_pct`, `channels` | In schedule mode (firmware runs its stored curve and ignores live sets). In manual mode it **decays** — see §14.3 |
+| **Peak intensity** | `input_number.reef_lights_peak_intensity` | The ceiling of the 24-point curve that `aipai_a8.set_schedule` writes into the fixture | Whenever `input_boolean.reef_lights_schedule` is off. **No effect at all** in manual mode |
+| **Schedule** | `input_boolean.reef_lights_schedule` | On → `automation.reef_lights_photoperiod` waits 3 s, runs `script.reef_lights_save_schedule` → `set_schedule` → fixture mode 1, runs the curve itself. Off → `automation.reef_lights_schedule_off` | — |
+
+Supporting mechanics already established on hardware:
+
+- **Two scales.** Live single-channel set is `0–1023`; everything *stored* (levels, the 24 hourly
+  points, the `save=` blob) is `0–100 %`. (§1)
+- 🔑 **Only `save=` persists.** `?w=` and friends are a preview. The firmware re-applies its stored
+  config on its own timer — observed twice on 09/03, lights set to 0 came back on by themselves
+  after ~5–10 min with no reboot.
+- **`read=config` returns stored levels, not live output.** After `b2=1023` it still read 50.
+- A reboot also restores stored levels.
+
+### 14.3 The master decays — evidence, 4 Sep 2026
+
+| Time | Observation |
+|---|---|
+| 13:00 / 13:01 | `script.reef_lights_save_schedule` then `automation.reef_lights_schedule_off` both ran → fixtures left **manual, saved at 0 %**, masters off. Heatsinks ~79 °F (room temp) |
+| 14:12 | Masters turned **on, 100 %** (`light.*_master` last_changed 14:12:29). Channel set points hold Default `35,100,10,20,100,100,90,15`; `light…_blue` and `…_deep_blue` report `setpoint_pct: 100`, `effective_pct: 100`, `raw_value: 1023` |
+| 17:40 | Dashboard screenshot: heatsinks **86.5 / 86.9 / 86.5 °F** — the fixtures were lit and warming |
+| ~18:00 | Heatsinks **82.85 / 83.93 / 83.71 °F** — falling, while HA still reads master on / 100 % and every channel `effective_pct: 100` |
+
+Heatsinks rising ~7 °F after the masters went on and then falling again with no HA-side change is
+the fixtures reverting to their stored (dark) config. **HA's state never moved, because the master
+light is `assumed_state` and nothing reads the fixture back.**
+
+⚠ This is not the same as "lights are off." It is worse: **HA and the fixture disagree and neither
+side reports it.** Same family as the NaN-masking lesson (the build's private master reference (NaN-masking lesson)) and the
+v0.2.1 reply sanity checks — a wrong-but-confident value is more dangerous than a missing one.
+`binary_sensor.*_stored_config_differs` (§13.3) is the answer to the reporting half.
+
+**Confidence:** high on the mechanism (it matches the §9 persistence finding, reproduced twice on
+09/03, plus the thermal curve here); **not yet reproduced under controlled timing** — §14.6 test A.
+
+### 14.4 The schedule toggle is asymmetric
+
+```
+automation.reef_lights_schedule_off   (trigger: schedule -> off)
+  1. light.turn_off  on all three masters
+  2. aipai_a8.set_manual  device_id: [1,2,3]  off: true     # saves the fixture dark, mode 0
+
+automation.reef_lights_photoperiod    (trigger: schedule -> on, any helper change, HA start, 03:30)
+  condition: schedule is on
+  1. delay 3 s
+  2. script.reef_lights_save_schedule                        # writes curve + mode 1
+     # masters were NOT touched  -- fixed in §13.5
+```
+
+Consequences:
+
+1. **off → on**: the fixture starts running the curve and lights up; HA's masters were still off from
+   the last schedule-off. The dashboard read dark, the tank was lit. Nothing wrong on the light — the
+   HA model was just stale. **Fixed in §13.5**: photoperiod now sets the masters to peak on
+   schedule→on, which is free because live sets are suppressed in schedule mode.
+2. **on → off**: correct and deliberate — parks the fixture dark through reboots with no polling.
+3. Moving the master while the schedule is **on** does nothing durable: the fixture is in mode 1 and
+   re-applies the curve. The coordinator already skips its reconnect re-send in schedule mode
+   (correct); the master slider is simply live in the UI and inert on the hardware. Since v0.2.3 it
+   does not even reach the wire.
+4. `input_boolean.reef_lights_schedule` off is documented as **freeze, not off** — but
+   `reef_lights_schedule_off` does in fact park the lights dark. The "freeze" language predates that
+   automation and is retired (§13.5): **schedule off = manual, saved dark**.
+
+### 14.5 What is wrong, ranked
+
+1. 🔻 **The master does not persist.** A manual master change is a live set only, so it is undone by
+   the firmware's own re-apply timer. **Still open** — this is the user-visible bug. §14.7 option 1.
+2. ✅ **Nothing detects HA/fixture disagreement.** Fixed by `binary_sensor.*_stored_config_differs`
+   and the two roll-ups (§13.3, §13.7).
+3. ✅ **Peak and master indistinguishable on the dashboard.** Fixed by native `visibility:` (§13.5).
+4. ✅ **off → on leaves the masters stale.** Fixed (§13.5).
+5. ✅ **Docs say "freeze"** where the behaviour is "park dark". Retired (§13.5).
+
+### 14.6 Tests to run on hardware (in order)
+
+**A. Confirm the decay, with timing.** Schedule off, mode manual. Set master 1 → 100 %. Sample every
+2 min for 20 min: `read=config[5..12]` (stored levels), the channels' `raw_value`, and the heatsink.
+Expect stored levels to stay 0 and the fixture to go dark at the first re-apply. **Record the
+re-apply interval** — it is the number that decides the §14.7 design.
+⚠ One fixture at a time, and leave a minute or two between full preset applies (burst writes reboot
+a fixture — reproduced twice on 09/03, §12).
+
+**B. `preview=` on hardware.** Still untested. `preview=<hour>&w=<0-100>&b=…` sets all channels in
+one call instead of eight — directly relevant to the burst-reboot problem, and it would make a
+master change one HTTP request. Test on Light 3 first (the one that has already rebooted once).
+
+**C. Does `set_manual` with levels persist a master?** `aipai_a8.set_manual` already takes
+`levels`. Verify that a save-backed manual write survives the re-apply timer and a reboot. If it
+does, §14.7 option 1 is a small change. **This test gates option 1** (§13.4).
+
+**D. off → on with masters off.** Confirm §14.4.1 end to end. *Largely obsolete since §13.5 sets the
+masters on schedule→on, but still worth one pass to confirm the display now matches the tank.*
+
+### 14.7 Proposed fixes (decide after tests A and C)
+
+**Option 1 — make manual persist (recommended, still open).** Route master and channel writes through
+`save=`/`set_manual` rather than live sets, debounced ~2–3 s so a slider drag is one flash write,
+not thirty. Cost: flash writes on manual changes only; manual is an override mode, not the running
+state, so volume is low. This makes HA's master mean what the UI implies.
+⚠ Reuse the existing `input_boolean.reef_spectrum_applying` guard pattern — **HA context cannot
+distinguish a script's writes from a hand edit** (§12), so any new writer of set points needs the
+same flag or `automation.reef_spectrum_detect_custom` will fire on it.
+
+**Option 2 — surface the disagreement. ✅ shipped in v0.2.3** as
+`binary_sensor.*_stored_config_differs` plus the two roll-ups (§13.3, §13.7). Keep it even after
+option 1 lands: it is the check that proves option 1 kept working.
+
+**Option 3 — dashboard only, no code. ✅ shipped** (§13.5): native `visibility:` on
+`input_boolean.reef_lights_schedule` hides the master in schedule mode and peak in manual. Documents
+the trap rather than fixing it, which is why option 1 is still open.
+
+**Also ✅ done:** `reef_lights_photoperiod` sets the masters to peak on schedule→on (§13.5), and
+"freeze" is corrected to "manual, saved dark" everywhere.
+
+### 14.8 Standing facts
+
+- `effective = setpoint × master %`. **A dark fixture still reads "channels on"** — the eight channel
+  entities sit at `on` with a set point while `effective_pct` is 0. Judge dark-or-lit by the master,
+  and after the §14.3 finding, by the heatsink trend rather than by HA alone.
+- ✅ DHCP reservations made for all three fixtures 09/04, and ✅ firewalled off the internet the
+  same day (pf block; existing MQTT sessions had to be killed first).
+- Never send `reset=1`, `version=`, `node=restart`.
+- ✅ HACS now resolves a Release, not a commit hash — v0.2.2 and v0.2.3 both published (§13.6). A tag
+  alone does nothing.
+
+---
+
+## 15. Current state and open items
+
+**Supersedes every earlier "Still open" / "Next" / "Physical state" list in this document.**
+
+### 15.1 Live state — read from Home Assistant 5 Sep 2026, 00:40 ET
+
+| | |
+|---|---|
+| Integration | `aipai_a8` v0.2.3, HA 2026.9.0, three devices |
+| Fixtures | Three, each addressed by its own LAN address |
+| Mode | All three **manual** |
+| Masters | All three **off**, `master_pct` 50, every channel `effective_pct: 0` / `raw_value: 0` |
+| Stored levels | All channels 0 on all three — **parked dark**, tank still being plumbed |
+| Heatsinks | 81.6 / 82.0 / 81.7 °F — room temperature, confirming dark |
+| Device clock / tz | 00:36 · 00:36 · 00:37, all `UTC-4` — in sync with local time |
+| Schedule toggle | **off** |
+| Peak intensity | **25 %** (was 70 on 3 Sep) |
+| Day cycle | sunrise 11:45 · full day 15:45 · sunset 20:45 · night 00:45 → 13 h photoperiod, 5 h at peak. `sensor.reef_lights_phase` = `Sunset` |
+| Preset | **Default** = `35,100,10,20,100,100,90,15` (helper `input_text.reef_spectrum_default`) |
+| Custom slot | `input_text.reef_spectrum_custom` = `100,1,1,1,1,1,1,100` |
+| `binary_sensor.reef_lights_unsaved` | **off** — HA and all three fixtures agree |
+| `binary_sensor.reef_lights_curve_loaded` | **off** — expected, schedule is off |
+| Per-fixture `*_stored_config_differs` | all **off** (believed 0, stored 0) |
+
+### 15.2 Open
+
+| # | Item | Where |
+|---|---|---|
+| 1 | 🔻 **A manual master still does not persist.** Route it through `save=`, debounced. Gated on test C. | §14.7 opt 1, §13.4 |
+| 2 | **Test A — measure the re-apply interval.** The number that decides the option 1 design. | §14.6 A |
+| 3 | **Test B — `preview=` on hardware.** One request instead of eight; the burst pattern has been implicated twice. | §14.6 B |
+| 4 | **Test C — does `set_manual` with levels survive the re-apply timer and a reboot?** | §14.6 C |
+| 5 | **Test D — off→on display honesty**, one confirming pass now that §13.5 sets the masters. | §14.6 D |
+| 6 | `script.reef_spectrum_apply_default` hardcodes `25,100,10,20,100,100,90,15` as its fallback; the helper holds `35,…`. Stale literal. | §12 |
+| 7 | "Spectrum — last 24 h" history graphs still plot HA's model; in schedule mode they show what HA sent, not what the light ran. | §11 |
+| 8 | An unidentified writer moves the dashboard config hash. Always re-fetch immediately before a transform. | §13.7 |
+
+### 15.3 Standing rules
+
+- **Only `save=` persists.** Live sets are a preview.
+- **Never** send `reset=1`, `version=`, `node=restart`.
+- **Leave a minute or two between full preset applies** — stacked bursts reboot a fixture (twice).
+- **Close the HA dashboard editor before any agent write**, or it saves its stale copy over the top.

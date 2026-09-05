@@ -13,7 +13,7 @@ CONFIG = "|".join(
     ["on", "0", "65", "50", "75"]
     + ["0"] * 8
     + [",".join(["0"] * 24)] * 8
-    + ["28.5", "18,44", "0", "0", "3156988", "0", "-4", "A8PRO6"]
+    + ["28.5", "18,44", "0", "0", "1234567", "0", "-4", "A8PRO6"]
 )
 
 fails = 0
@@ -28,15 +28,15 @@ async def main():
 
     # 1. a stalled read is retried and succeeds -- the 04 Sep failure
     s = ClientSession([asyncio.TimeoutError(), CONFIG])
-    c = api.A8Client("192.168.1.155", s)
+    c = api.A8Client("192.168.1.71", s)
     cfg = await c.get_config()
-    check("timeout on read=config is retried and recovers", cfg.serial == "3156988")
+    check("timeout on read=config is retried and recovers", cfg.serial == "1234567")
     check("read=config uses the long timeout", s.calls[0][1] == CONFIG_TIMEOUT)
     check("retry re-sent the same request", s.calls[0][0] == s.calls[1][0] and len(s.calls) == 2)
 
     # 2. two failures in a row still raise, with a message that says something
     s = ClientSession([asyncio.TimeoutError(), asyncio.TimeoutError()])
-    c = api.A8Client("192.168.1.155", s)
+    c = api.A8Client("192.168.1.71", s)
     try:
         await c.get_config()
         check("two failures raise", False)
@@ -48,7 +48,7 @@ async def main():
 
     # 3. the empty-str error class is named rather than logged blank
     s = ClientSession([ServerDisconnectedError(), ServerDisconnectedError()])
-    c = api.A8Client("192.168.1.155", s)
+    c = api.A8Client("192.168.1.71", s)
     try:
         await c.get_config()
     except api.A8ConnectionError as e:
@@ -56,7 +56,7 @@ async def main():
 
     # 4. a live set still uses the short timeout, and is retried too
     s = ClientSession([asyncio.TimeoutError(), "A+"])
-    c = api.A8Client("192.168.1.155", s)
+    c = api.A8Client("192.168.1.71", s)
     await c.set_channel_pct("b2", 100)
     check("live set uses the short timeout", s.calls[0][1] == REQUEST_TIMEOUT)
     check("live set recovers after a retry", len(s.calls) == 2)
@@ -66,21 +66,21 @@ async def main():
         channels=8, mode=1, levels_pct=[0] * 8, schedule=[[0] * 24] * 8, timezone="-4"
     )
     s = ClientSession([asyncio.TimeoutError(), "true"])
-    c = api.A8Client("192.168.1.155", s)
+    c = api.A8Client("192.168.1.71", s)
     await c.save_config(blob)
     check("save= uses the long timeout", s.calls[0][1] == CONFIG_TIMEOUT)
     check("save= retry is byte-identical", s.calls[0][0] == s.calls[1][0])
 
     # 6. no regression: a clean call makes exactly one request
     s = ClientSession([CONFIG])
-    c = api.A8Client("192.168.1.155", s)
+    c = api.A8Client("192.168.1.71", s)
     await c.get_config()
     check("a healthy request is not retried", len(s.calls) == 1)
 
     # 7. the backoff is actually awaited
     api.RETRY_BACKOFF = 0.25
     s = ClientSession([asyncio.TimeoutError(), CONFIG])
-    c = api.A8Client("192.168.1.155", s)
+    c = api.A8Client("192.168.1.71", s)
     t0 = time.monotonic()
     await c.get_config()
     check("retry waits for the backoff", time.monotonic() - t0 >= 0.24)

@@ -51,5 +51,5 @@ class A8ConfigFlow(ConfigFlow, domain=DOMAIN):
             step_id="user",
             data_schema=STEP_USER_SCHEMA,
             errors=errors,
-            description_placeholders={"example": "192.168.1.208"},
+            description_placeholders={"example": "192.168.1.73"},
         )

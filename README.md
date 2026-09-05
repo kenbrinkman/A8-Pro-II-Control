@@ -244,8 +244,8 @@ Tested against one A8 Pro II, station mode, factory-reset, joined to a 2.4 GHz h
 Probe output, verbatim:
 
 ```
-LOCAL HTTP API IS ALIVE  →  http://192.168.1.208:80/
-sta=getip: ip=192.168.1.208 serial=XXXXXXX flag=false
+LOCAL HTTP API IS ALIVE  →  http://192.168.1.71:80/
+sta=getip: ip=192.168.1.71 serial=XXXXXXX flag=false
 model=A8PRO6  serial=XXXXXXX  channels=8  switch=on  mode=0 (manual)
 temp=43.19°C  clock=7,14  timer on/off=0/0  tz=UTC8  fan on/off/cutoff=65/50/75
 ```
@@ -284,7 +284,7 @@ repository. Verified on HA 2026.9 against the fixture above. See its
 *v0.2.2* — the fixture's fan thresholds (`read=config[2..4]`) now ride on the temperature sensor
 as the attributes `fan_on` / `fan_off` / `thermal_cutoff`, published in that sensor's display unit,
 so an automation can judge a heatsink reading without enabling three sensors that hold constants.
-Also: the device name now carries the serial (`A8 Pro 3156988`). With `has_entity_name`, the device
+Also: the device name now carries the serial (`A8 Pro 1234567`). With `has_entity_name`, the device
 name seeds every entity_id, and `pretty_model()` returns the same `A8 Pro` for every A8PRO6 — so a
 second fixture used to collide into `_2` and a third into `_3`, **in registration order rather than
 light order**. Existing installs keep the entity_ids they already have; renaming the device offers

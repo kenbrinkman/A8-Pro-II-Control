@@ -8,7 +8,7 @@
 # Uses the modern `template:` light schema (HA 2024.10+). The legacy
 # `light: - platform: template` format was removed and will NOT load.
 #
-# To add another fixture: copy every block that mentions "light3" / 192.168.1.208
+# To add another fixture: copy every block that mentions "light3" / 192.168.1.73
 # and change the number and IP.
 
 rest_command:
@@ -99,7 +99,7 @@ rest:
   # Field indices are for an 8-CHANNEL fixture (d = 2*(8-6) = 4).
   # For a 6-channel light subtract 4 from each: temp 17, clock 18, serial 21, model 24.
   # `availability` guards against the light replying "A+" instead of a config string.
-  - resource: "http://192.168.1.208/?read=config"
+  - resource: "http://192.168.1.73/?read=config"
     scan_interval: 60
     timeout: 5
     sensor:
@@ -146,7 +146,7 @@ template:
               value: "{{ 50 if states('input_number.a8_light3_w') | float(0) == 0 else states('input_number.a8_light3_w') }}"
           - action: rest_command.a8_set_channel
             data:
-              ip: "192.168.1.208"
+              ip: "192.168.1.73"
               channel: "w"
               pct: "{{ 50 if states('input_number.a8_light3_w') | float(0) == 0 else states('input_number.a8_light3_w') }}"
         turn_off:
@@ -157,7 +157,7 @@ template:
               value: 0
           - action: rest_command.a8_set_channel
             data:
-              ip: "192.168.1.208"
+              ip: "192.168.1.73"
               channel: "w"
               pct: 0
         set_level:
@@ -168,7 +168,7 @@ template:
               value: "{{ (brightness / 2.55) | round(0) | int }}"
           - action: rest_command.a8_set_channel
             data:
-              ip: "192.168.1.208"
+              ip: "192.168.1.73"
               channel: "w"
               pct: "{{ (brightness / 2.55) | round(0) | int }}"
       - name: "A8 Light 3 Blue"
@@ -183,7 +183,7 @@ template:
               value: "{{ 50 if states('input_number.a8_light3_b') | float(0) == 0 else states('input_number.a8_light3_b') }}"
           - action: rest_command.a8_set_channel
             data:
-              ip: "192.168.1.208"
+              ip: "192.168.1.73"
               channel: "b"
               pct: "{{ 50 if states('input_number.a8_light3_b') | float(0) == 0 else states('input_number.a8_light3_b') }}"
         turn_off:
@@ -194,7 +194,7 @@ template:
               value: 0
           - action: rest_command.a8_set_channel
             data:
-              ip: "192.168.1.208"
+              ip: "192.168.1.73"
               channel: "b"
               pct: 0
         set_level:
@@ -205,7 +205,7 @@ template:
               value: "{{ (brightness / 2.55) | round(0) | int }}"
           - action: rest_command.a8_set_channel
             data:
-              ip: "192.168.1.208"
+              ip: "192.168.1.73"
               channel: "b"
               pct: "{{ (brightness / 2.55) | round(0) | int }}"
       - name: "A8 Light 3 Red"
@@ -220,7 +220,7 @@ template:
               value: "{{ 50 if states('input_number.a8_light3_r') | float(0) == 0 else states('input_number.a8_light3_r') }}"
           - action: rest_command.a8_set_channel
             data:
-              ip: "192.168.1.208"
+              ip: "192.168.1.73"
               channel: "r"
               pct: "{{ 50 if states('input_number.a8_light3_r') | float(0) == 0 else states('input_number.a8_light3_r') }}"
         turn_off:
@@ -231,7 +231,7 @@ template:
               value: 0
           - action: rest_command.a8_set_channel
             data:
-              ip: "192.168.1.208"
+              ip: "192.168.1.73"
               channel: "r"
               pct: 0
         set_level:
@@ -242,7 +242,7 @@ template:
               value: "{{ (brightness / 2.55) | round(0) | int }}"
           - action: rest_command.a8_set_channel
             data:
-              ip: "192.168.1.208"
+              ip: "192.168.1.73"
               channel: "r"
               pct: "{{ (brightness / 2.55) | round(0) | int }}"
       - name: "A8 Light 3 Green"
@@ -257,7 +257,7 @@ template:
               value: "{{ 50 if states('input_number.a8_light3_g') | float(0) == 0 else states('input_number.a8_light3_g') }}"
           - action: rest_command.a8_set_channel
             data:
-              ip: "192.168.1.208"
+              ip: "192.168.1.73"
               channel: "g"
               pct: "{{ 50 if states('input_number.a8_light3_g') | float(0) == 0 else states('input_number.a8_light3_g') }}"
         turn_off:
@@ -268,7 +268,7 @@ template:
               value: 0
           - action: rest_command.a8_set_channel
             data:
-              ip: "192.168.1.208"
+              ip: "192.168.1.73"
               channel: "g"
               pct: 0
         set_level:
@@ -279,7 +279,7 @@ template:
               value: "{{ (brightness / 2.55) | round(0) | int }}"
           - action: rest_command.a8_set_channel
             data:
-              ip: "192.168.1.208"
+              ip: "192.168.1.73"
               channel: "g"
               pct: "{{ (brightness / 2.55) | round(0) | int }}"
       - name: "A8 Light 3 Deep Blue"
@@ -294,7 +294,7 @@ template:
               value: "{{ 50 if states('input_number.a8_light3_b2') | float(0) == 0 else states('input_number.a8_light3_b2') }}"
           - action: rest_command.a8_set_channel
             data:
-              ip: "192.168.1.208"
+              ip: "192.168.1.73"
               channel: "b2"
               pct: "{{ 50 if states('input_number.a8_light3_b2') | float(0) == 0 else states('input_number.a8_light3_b2') }}"
         turn_off:
@@ -305,7 +305,7 @@ template:
               value: 0
           - action: rest_command.a8_set_channel
             data:
-              ip: "192.168.1.208"
+              ip: "192.168.1.73"
               channel: "b2"
               pct: 0
         set_level:
@@ -316,7 +316,7 @@ template:
               value: "{{ (brightness / 2.55) | round(0) | int }}"
           - action: rest_command.a8_set_channel
             data:
-              ip: "192.168.1.208"
+              ip: "192.168.1.73"
               channel: "b2"
               pct: "{{ (brightness / 2.55) | round(0) | int }}"
       - name: "A8 Light 3 Purple"
@@ -331,7 +331,7 @@ template:
               value: "{{ 50 if states('input_number.a8_light3_p') | float(0) == 0 else states('input_number.a8_light3_p') }}"
           - action: rest_command.a8_set_channel
             data:
-              ip: "192.168.1.208"
+              ip: "192.168.1.73"
               channel: "p"
               pct: "{{ 50 if states('input_number.a8_light3_p') | float(0) == 0 else states('input_number.a8_light3_p') }}"
         turn_off:
@@ -342,7 +342,7 @@ template:
               value: 0
           - action: rest_command.a8_set_channel
             data:
-              ip: "192.168.1.208"
+              ip: "192.168.1.73"
               channel: "p"
               pct: 0
         set_level:
@@ -353,7 +353,7 @@ template:
               value: "{{ (brightness / 2.55) | round(0) | int }}"
           - action: rest_command.a8_set_channel
             data:
-              ip: "192.168.1.208"
+              ip: "192.168.1.73"
               channel: "p"
               pct: "{{ (brightness / 2.55) | round(0) | int }}"
       - name: "A8 Light 3 UV"
@@ -368,7 +368,7 @@ template:
               value: "{{ 50 if states('input_number.a8_light3_uv') | float(0) == 0 else states('input_number.a8_light3_uv') }}"
           - action: rest_command.a8_set_channel
             data:
-              ip: "192.168.1.208"
+              ip: "192.168.1.73"
               channel: "uv"
               pct: "{{ 50 if states('input_number.a8_light3_uv') | float(0) == 0 else states('input_number.a8_light3_uv') }}"
         turn_off:
@@ -379,7 +379,7 @@ template:
               value: 0
           - action: rest_command.a8_set_channel
             data:
-              ip: "192.168.1.208"
+              ip: "192.168.1.73"
               channel: "uv"
               pct: 0
         set_level:
@@ -390,7 +390,7 @@ template:
               value: "{{ (brightness / 2.55) | round(0) | int }}"
           - action: rest_command.a8_set_channel
             data:
-              ip: "192.168.1.208"
+              ip: "192.168.1.73"
               channel: "uv"
               pct: "{{ (brightness / 2.55) | round(0) | int }}"
       - name: "A8 Light 3 Warm White"
@@ -405,7 +405,7 @@ template:
               value: "{{ 50 if states('input_number.a8_light3_wm') | float(0) == 0 else states('input_number.a8_light3_wm') }}"
           - action: rest_command.a8_set_channel
             data:
-              ip: "192.168.1.208"
+              ip: "192.168.1.73"
               channel: "wm"
               pct: "{{ 50 if states('input_number.a8_light3_wm') | float(0) == 0 else states('input_number.a8_light3_wm') }}"
         turn_off:
@@ -416,7 +416,7 @@ template:
               value: 0
           - action: rest_command.a8_set_channel
             data:
-              ip: "192.168.1.208"
+              ip: "192.168.1.73"
               channel: "wm"
               pct: 0
         set_level:
@@ -427,7 +427,7 @@ template:
               value: "{{ (brightness / 2.55) | round(0) | int }}"
           - action: rest_command.a8_set_channel
             data:
-              ip: "192.168.1.208"
+              ip: "192.168.1.73"
               channel: "wm"
               pct: "{{ (brightness / 2.55) | round(0) | int }}"
 
@@ -444,6 +444,6 @@ automation:
     actions:
       - action: rest_command.a8_set_channel
         data:
-          ip: "192.168.1.208"
+          ip: "192.168.1.73"
           channel: "{{ trigger.entity_id.split('_')[-1] }}"
           pct: "{{ trigger.to_state.state }}"

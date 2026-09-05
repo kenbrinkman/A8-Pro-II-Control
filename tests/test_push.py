@@ -14,14 +14,14 @@ def check(l, c):
     else: fails += 1; print(f"  FAIL {l}")
 
 BASE = ["on", "{mode}", "65", "50", "75"] + ["50"]*8 + [",".join(["0"]*24)]*8 \
-     + ["28.5", "18,44", "0", "0", "3156988", "0", "-4", "A8PRO6"]
+     + ["28.5", "18,44", "0", "0", "1234567", "0", "-4", "A8PRO6"]
 
 def cfg(mode): return api.parse_config("|".join(BASE).format(mode=mode))
 
 def make(mode):
     s = fake_aiohttp.ClientSession(["A+"]*32)
     co = A8Coordinator.__new__(A8Coordinator)
-    co.client = api.A8Client("192.168.1.155", s)
+    co.client = api.A8Client("192.168.1.71", s)
     co.keys = const.CHANNEL_KEYS[:8]
     co.setpoint = dict.fromkeys(co.keys, 50)
     co.last_nonzero = dict.fromkeys(co.keys, 50)
